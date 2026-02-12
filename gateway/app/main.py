@@ -209,3 +209,75 @@ async def list_receipts(limit: int = 50) -> JSONResponse:
     """List recent receipts."""
     receipts = receipt_store.list_recent(limit)
     return JSONResponse(content=[r.model_dump() for r in receipts])
+
+
+# --- Dispute endpoints (MVP: mock on-chain, track state in-memory) ---
+
+_dispute_state: dict[str, dict] = {}
+
+
+@app.post("/v1/disputes/open")
+async def open_dispute(request: Request) -> JSONResponse:
+    """Open a dispute for a settled request."""
+    body = await request.json()
+    request_id = body.get("request_id", "")
+
+    receipt = receipt_store.get(request_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    if request_id in _dispute_state:
+        raise HTTPException(status_code=409, detail="Dispute already open")
+
+    _dispute_state[request_id] = {
+        "status": "DISPUTED",
+        "original_payout": receipt.pricing.computed_payout if receipt.pricing else "0",
+        "final_payout": None,
+    }
+
+    logger.info(f"Dispute opened: {request_id}")
+
+    return JSONResponse(content={
+        "request_id": request_id,
+        "dispute_status": "DISPUTED",
+        "message": "Dispute opened. Awaiting resolver decision.",
+    })
+
+
+@app.post("/v1/disputes/resolve")
+async def resolve_dispute(request: Request) -> JSONResponse:
+    """Resolve a dispute (resolver only in MVP)."""
+    body = await request.json()
+    request_id = body.get("request_id", "")
+    final_payout = body.get("final_payout")
+
+    if request_id not in _dispute_state:
+        raise HTTPException(status_code=404, detail="No open dispute for this request")
+
+    dispute = _dispute_state[request_id]
+    if dispute["status"] != "DISPUTED":
+        raise HTTPException(status_code=409, detail="Dispute already resolved")
+
+    original = dispute["original_payout"]
+    dispute["status"] = "RESOLVED"
+    dispute["final_payout"] = str(final_payout)
+
+    logger.info(f"Dispute resolved: {request_id} original={original} final={final_payout}")
+
+    return JSONResponse(content={
+        "request_id": request_id,
+        "dispute_status": "RESOLVED",
+        "original_payout": original,
+        "final_payout": str(final_payout),
+    })
+
+
+@app.get("/v1/disputes/{request_id}")
+async def get_dispute(request_id: str) -> JSONResponse:
+    """Get dispute status for a request."""
+    if request_id not in _dispute_state:
+        return JSONResponse(content={"request_id": request_id, "dispute_status": "NONE"})
+    return JSONResponse(content={
+        "request_id": request_id,
+        **_dispute_state[request_id],
+    })

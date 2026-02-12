@@ -481,7 +481,7 @@ Create a dashboard that visualizes:
 ---
 
 ## T-080 — Dispute UX & Resolver Script (MVP)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P1  
 **Depends on:** T-011, T-070
 
@@ -501,6 +501,13 @@ Add minimal ability to open and resolve disputes for one example scenario.
 
 ### Deliverables
 - CLI + endpoints + docs
+
+### Completion Notes
+- POST /v1/disputes/open, POST /v1/disputes/resolve, GET /v1/disputes/{id}
+- scripts/resolve_dispute.py: CLI for open/resolve operations
+- MVP: in-memory dispute tracking, mock on-chain state
+- 47 total tests passing
+- Validate: `pytest gateway/tests/ facilitator/tests/ -v`
 
 ---
 
