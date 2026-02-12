@@ -1,32 +1,48 @@
 """x402 Payment Gating — 402 Payment Required challenge flow.
 
-MVP Implementation:
-- First request without payment header → 402 with payment details
-- Second request with X-PAYMENT header → verify and proceed
+Supports two modes controlled by PAYMENT_MODE env var:
+- "hmac":  simplified HMAC-SHA256 token (local dev, no keys needed)
+- "x402":  real x402-compatible EIP-3009/EIP-712 signed authorization
 
-For hackathon MVP, we use a simplified local verification strategy:
-- Payment token is an HMAC-SHA256 of (request_path + max_price + nonce) signed with a shared secret.
-- This simulates the x402 flow without requiring a full on-chain payment verification per-request.
-- In production, this would be replaced with actual x402 ERC20 payment proof verification.
+In x402 mode:
+- 402 response includes EIP-3009-compatible payment requirements
+- Client signs a TransferAuthorization via EIP-712 typed data
+- Gateway verifies the signature (recovers signer, checks parameters)
+- Compatible with Coinbase x402 protocol spec (v1 header format)
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
-import hmac
+import hmac as hmac_mod
 import json
 import logging
+import os
 import time
 from typing import Any
 
-from fastapi import Request, Response
+from eth_account import Account
+from eth_account.messages import encode_typed_data
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("sla-gateway.x402")
 
-# MVP: shared secret for HMAC-based payment verification
-# In production, this would verify on-chain payment proofs
-PAYMENT_SECRET = "sla-pay-v2-demo-secret"
+# ── Configuration ────────────────────────────────────────────────────────────
+
+PAYMENT_MODE = os.getenv("PAYMENT_MODE", "hmac")  # "hmac" or "x402"
+PAYMENT_SECRET = "sla-pay-v2-demo-secret"  # HMAC mode only
+
+# EIP-712 domain for SLAToken TransferAuthorization
+SLA_TOKEN_NAME = os.getenv("SLA_TOKEN_NAME", "SLAToken")
+SLA_TOKEN_VERSION = os.getenv("SLA_TOKEN_VERSION", "1")
+
+# Track used nonces for replay protection (in-memory for MVP)
+_used_nonces: set[str] = set()
+
+
+# ── 402 Response ─────────────────────────────────────────────────────────────
 
 
 def create_402_response(
@@ -36,36 +52,40 @@ def create_402_response(
     settlement_contract: str,
     chain_id: int,
     seller: str,
-    scheme: str = "x402",
 ) -> JSONResponse:
     """Return a 402 Payment Required response with x402-compatible payment details."""
-    nonce = str(int(time.time() * 1000))
-
-    payment_details = {
-        "scheme": scheme,
-        "network": str(chain_id),
+    payment_details: dict[str, Any] = {
+        "scheme": "exact",
+        "network": f"eip155:{chain_id}",
         "maxAmountRequired": max_price,
         "resource": settlement_contract,
         "description": "SLA-Pay v2 — pay max_price, receive performance-based refund",
         "payTo": seller,
-        "token": payment_token_address,
-        "nonce": nonce,
+        "asset": payment_token_address,
+        "maxTimeoutSeconds": 300,
         "extra": {
+            "name": SLA_TOKEN_NAME,
+            "version": SLA_TOKEN_VERSION,
             "protocol": "sla-pay-v2",
-            "version": "1.0",
         },
+    }
+
+    body = {
+        "x402Version": 1,
+        "error": "Payment Required",
+        "accepts": [payment_details],
     }
 
     return JSONResponse(
         status_code=402,
-        content={
-            "error": "Payment Required",
-            "accepts": [payment_details],
-        },
+        content=body,
         headers={
             "X-PAYMENT-REQUIRED": "true",
         },
     )
+
+
+# ── HMAC Mode (local dev) ───────────────────────────────────────────────────
 
 
 def create_payment_token(
@@ -75,29 +95,13 @@ def create_payment_token(
     nonce: str,
     secret: str = PAYMENT_SECRET,
 ) -> str:
-    """Create an HMAC-based payment token (MVP simplified verification)."""
+    """Create an HMAC-based payment token (simplified local dev mode)."""
     message = f"{path}:{max_price}:{nonce}"
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+    return hmac_mod.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
-def verify_payment_header(
-    request: Request,
-    *,
-    max_price: str,
-    secret: str = PAYMENT_SECRET,
-) -> dict[str, Any] | None:
-    """Verify the X-PAYMENT header on a request.
-
-    Returns parsed payment info if valid, None if missing/invalid.
-
-    Expected header format (JSON):
-        {
-            "token": "<hmac_hex>",
-            "nonce": "<nonce>",
-            "max_price": "<amount>",
-            "buyer": "<address>"
-        }
-    """
+def _verify_hmac(request: Request, *, max_price: str) -> dict[str, Any] | None:
+    """Verify HMAC-based X-PAYMENT header."""
     payment_header = request.headers.get("X-PAYMENT")
     if not payment_header:
         return None
@@ -117,29 +121,234 @@ def verify_payment_header(
         logger.warning("X-PAYMENT header missing required fields")
         return None
 
-    # Verify HMAC
     path = str(request.url.path)
-    expected = create_payment_token(
-        path=path,
-        max_price=header_max_price,
-        nonce=nonce,
-        secret=secret,
-    )
+    expected = create_payment_token(path=path, max_price=header_max_price, nonce=nonce)
 
-    if not hmac.compare_digest(token, expected):
+    if not hmac_mod.compare_digest(token, expected):
         logger.warning("X-PAYMENT HMAC verification failed")
         return None
 
-    # Verify max_price matches
     if header_max_price != max_price:
-        logger.warning(f"X-PAYMENT max_price mismatch: {header_max_price} != {max_price}")
+        logger.warning("X-PAYMENT max_price mismatch: %s != %s", header_max_price, max_price)
         return None
 
-    logger.info(f"Payment verified: buyer={buyer}, max_price={max_price}, nonce={nonce}")
+    logger.info("HMAC payment verified: buyer=%s, max_price=%s", buyer, max_price)
+    return {"buyer": buyer, "max_price": max_price, "nonce": nonce, "verified": True}
 
-    return {
-        "buyer": buyer,
-        "max_price": max_price,
+
+# ── x402 Mode (EIP-3009 / EIP-712) ──────────────────────────────────────────
+
+# EIP-712 types for TransferWithAuthorization (EIP-3009)
+TRANSFER_AUTH_TYPES = {
+    "EIP712Domain": [
+        {"name": "name", "type": "string"},
+        {"name": "version", "type": "string"},
+        {"name": "chainId", "type": "uint256"},
+        {"name": "verifyingContract", "type": "address"},
+    ],
+    "TransferWithAuthorization": [
+        {"name": "from", "type": "address"},
+        {"name": "to", "type": "address"},
+        {"name": "value", "type": "uint256"},
+        {"name": "validAfter", "type": "uint256"},
+        {"name": "validBefore", "type": "uint256"},
+        {"name": "nonce", "type": "bytes32"},
+    ],
+}
+
+
+def create_x402_payment(
+    *,
+    private_key: str,
+    from_address: str,
+    to_address: str,
+    value: str,
+    asset: str,
+    chain_id: int,
+    token_name: str = "SLAToken",
+    token_version: str = "1",
+) -> str:
+    """Create an x402 payment header value (Base64-encoded JSON).
+
+    Signs a TransferWithAuthorization message using EIP-712.
+    """
+    nonce = os.urandom(32)
+    nonce_hex = "0x" + nonce.hex()
+    now = int(time.time())
+    valid_before = now + 300  # 5 minute window
+
+    domain_data = {
+        "name": token_name,
+        "version": token_version,
+        "chainId": chain_id,
+        "verifyingContract": asset,
+    }
+
+    message_data = {
+        "from": from_address,
+        "to": to_address,
+        "value": int(value),
+        "validAfter": 0,
+        "validBefore": valid_before,
         "nonce": nonce,
+    }
+
+    # Sign using eth_account's EIP-712 support
+    signable = encode_typed_data(
+        domain_data=domain_data,
+        message_types={"TransferWithAuthorization": TRANSFER_AUTH_TYPES["TransferWithAuthorization"]},
+        message_data=message_data,
+    )
+    signed = Account.sign_message(signable, private_key=private_key)
+
+    payload = {
+        "x402Version": 1,
+        "scheme": "exact",
+        "network": f"eip155:{chain_id}",
+        "payload": {
+            "signature": signed.signature.hex() if isinstance(signed.signature, bytes) else hex(signed.signature),
+            "authorization": {
+                "from": from_address,
+                "to": to_address,
+                "value": value,
+                "validAfter": "0",
+                "validBefore": str(valid_before),
+                "nonce": nonce_hex,
+            },
+        },
+    }
+
+    return base64.b64encode(json.dumps(payload).encode()).decode()
+
+
+def _verify_x402(request: Request, *, max_price: str, chain_id: int, asset: str) -> dict[str, Any] | None:
+    """Verify x402 EIP-3009 payment authorization from X-PAYMENT header."""
+    payment_header = request.headers.get("X-PAYMENT")
+    if not payment_header:
+        return None
+
+    # Decode Base64
+    try:
+        decoded = base64.b64decode(payment_header)
+        payment = json.loads(decoded)
+    except (ValueError, json.JSONDecodeError):
+        # Fallback: try raw JSON (for backward compatibility)
+        try:
+            payment = json.loads(payment_header)
+        except json.JSONDecodeError:
+            logger.warning("Invalid X-PAYMENT header: not Base64 JSON or raw JSON")
+            return None
+
+    # Extract fields
+    payload = payment.get("payload", {})
+    authorization = payload.get("authorization", {})
+    signature_hex = payload.get("signature", "")
+
+    from_addr = authorization.get("from", "")
+    to_addr = authorization.get("to", "")
+    value = authorization.get("value", "")
+    valid_after = int(authorization.get("validAfter", "0"))
+    valid_before = int(authorization.get("validBefore", "0"))
+    nonce_hex = authorization.get("nonce", "")
+
+    if not all([from_addr, to_addr, value, signature_hex, nonce_hex]):
+        logger.warning("x402 payment missing required authorization fields")
+        return None
+
+    # Check value >= max_price
+    if int(value) < int(max_price):
+        logger.warning("x402 payment value %s < max_price %s", value, max_price)
+        return None
+
+    # Check time window
+    now = int(time.time())
+    if now < valid_after:
+        logger.warning("x402 payment not yet valid (validAfter=%d, now=%d)", valid_after, now)
+        return None
+    if valid_before > 0 and now > valid_before:
+        logger.warning("x402 payment expired (validBefore=%d, now=%d)", valid_before, now)
+        return None
+
+    # Replay protection
+    if nonce_hex in _used_nonces:
+        logger.warning("x402 nonce already used: %s", nonce_hex)
+        return None
+
+    # Recover signer from EIP-712 signature
+    try:
+        nonce_bytes = bytes.fromhex(nonce_hex.removeprefix("0x"))
+
+        domain_data = {
+            "name": SLA_TOKEN_NAME,
+            "version": SLA_TOKEN_VERSION,
+            "chainId": chain_id,
+            "verifyingContract": asset,
+        }
+
+        message_data = {
+            "from": from_addr,
+            "to": to_addr,
+            "value": int(value),
+            "validAfter": valid_after,
+            "validBefore": valid_before,
+            "nonce": nonce_bytes,
+        }
+
+        signable = encode_typed_data(
+            domain_data=domain_data,
+            message_types={"TransferWithAuthorization": TRANSFER_AUTH_TYPES["TransferWithAuthorization"]},
+            message_data=message_data,
+        )
+
+        sig_bytes = bytes.fromhex(signature_hex.removeprefix("0x"))
+        recovered = Account.recover_message(signable, signature=sig_bytes)
+
+        if recovered.lower() != from_addr.lower():
+            logger.warning(
+                "x402 signature mismatch: recovered=%s, from=%s",
+                recovered, from_addr,
+            )
+            return None
+
+    except Exception as exc:
+        logger.warning("x402 signature verification failed: %s", exc)
+        return None
+
+    # Mark nonce as used
+    _used_nonces.add(nonce_hex)
+
+    logger.info("x402 payment verified: buyer=%s, value=%s, nonce=%s", from_addr, value, nonce_hex)
+    return {
+        "buyer": from_addr,
+        "max_price": max_price,
+        "nonce": nonce_hex,
         "verified": True,
     }
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
+
+
+def verify_payment_header(
+    request: Request,
+    *,
+    max_price: str,
+    chain_id: int = 0,
+    asset: str = "",
+    secret: str = PAYMENT_SECRET,
+) -> dict[str, Any] | None:
+    """Verify the X-PAYMENT header on a request.
+
+    Dispatches to HMAC or x402 mode based on PAYMENT_MODE env var.
+    """
+    mode = os.getenv("PAYMENT_MODE", PAYMENT_MODE)
+
+    if mode == "x402":
+        return _verify_x402(request, max_price=max_price, chain_id=chain_id, asset=asset)
+    else:
+        return _verify_hmac(request, max_price=max_price)
+
+
+def clear_nonce_cache() -> None:
+    """Clear the nonce cache (for testing)."""
+    _used_nonces.clear()

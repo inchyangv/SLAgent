@@ -695,8 +695,8 @@ Add a minimal "buyer agent" that behaves like an autonomous client:
 ---
 
 ## T-122 — Real x402 Integration (Replace HMAC Simulation)
-**Status:** TODO
-**Priority:** P0  
+**Status:** DONE
+**Priority:** P0
 **Depends on:** T-040
 
 ### Description
@@ -717,6 +717,17 @@ Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment aut
 ### Acceptance Criteria
 - Paid request verification no longer relies on shared-secret HMAC
 - Demo script can exercise x402 mode with real proofs
+
+### Completion Notes
+- gateway/app/x402.py: dual-mode (PAYMENT_MODE=hmac|x402)
+- x402 mode: EIP-3009/EIP-712 TransferWithAuthorization signing + verification
+- 402 response: x402 v1 spec compliant (scheme=exact, eip155:chainId, asset, payTo, etc.)
+- create_x402_payment(): buyer-side EIP-712 signing with eth_account
+- Replay protection: in-memory nonce tracking, time window validation
+- Backward compatible: HMAC mode still works for local dev
+- 9 x402 tests (6 HMAC + 3 EIP-712: create+verify, replay rejection, insufficient value)
+- 81 total tests passing
+- Validate: `pytest gateway/tests/test_x402.py -v`
 
 ---
 

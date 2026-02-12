@@ -52,7 +52,12 @@ async def call_endpoint(request: Request) -> JSONResponse:
     max_price = mandate["max_price"]
 
     # x402: check for payment
-    payment_info = verify_payment_header(request, max_price=max_price)
+    payment_info = verify_payment_header(
+        request,
+        max_price=max_price,
+        chain_id=settings.chain_id,
+        asset=settings.payment_token,
+    )
     if payment_info is None:
         return create_402_response(
             max_price=max_price,
