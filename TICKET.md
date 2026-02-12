@@ -242,7 +242,7 @@ Build the FastAPI gateway that proxies to seller service, measures metrics, vali
 ---
 
 ## T-031 — Deterministic Validator: JSON Schema
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-030, T-020
 
@@ -264,6 +264,12 @@ Implement JSON schema validation as the MVP proof of correctness.
 ### Deliverables
 - `gateway/app/validators/json_schema.py`
 - schema files + tests
+
+### Completion Notes
+- gateway/app/validators/json_schema.py: validate_json_schema() with schema caching
+- gateway/app/validators/schemas/invoice_v1.json: demo schema
+- 8 tests: pass/fail cases, unknown schema, determinism
+- Validate: `pytest gateway/tests/test_validators.py -v`
 
 ---
 
