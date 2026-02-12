@@ -512,7 +512,7 @@ Add minimal ability to open and resolve disputes for one example scenario.
 ---
 
 ## T-090 — End-to-End Demo Script
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-050, T-060
 
@@ -534,6 +534,12 @@ Produce a repeatable script that runs the three scenarios in sequence and prints
 ### Deliverables
 - `scripts/run_demo.py`
 - `docs/DEMO.md`
+
+### Completion Notes
+- scripts/run_demo.py: runs 3 scenarios (fast/slow/invalid) with 402→paid flow
+- docs/DEMO.md: updated with one-command demo, dashboard, dispute instructions
+- Prints per-scenario metrics, payout, refund, receipt hash, summary table
+- Validate: start services, then `python scripts/run_demo.py`
 
 ---
 

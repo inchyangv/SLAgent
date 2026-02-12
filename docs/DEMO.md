@@ -83,3 +83,39 @@ python scripts/run_demo.py
 | Fast + valid | fast | $0.10 (100000) | $0.00 | latency_tier_lte_2000 |
 | Slow + valid | slow | $0.06 (60000) | $0.04 (40000) | latency_tier_lte_999999999 |
 | Invalid output | invalid | $0.00 | $0.10 (100000) | validation_failed |
+
+## One-Command Demo
+
+After starting both services:
+
+```bash
+# Install dependencies
+pip install -e ".[dev]"
+
+# Start services (in separate terminals)
+.venv/bin/uvicorn gateway.demo_seller.main:app --port 8001
+.venv/bin/uvicorn gateway.app.main:app --port 8000
+
+# Run all three scenarios
+.venv/bin/python scripts/run_demo.py
+```
+
+The demo script will:
+1. Send an unpaid request (expect 402)
+2. Send a paid request for each scenario (fast/slow/invalid)
+3. Print metrics, validation status, payout/refund, receipt hash
+4. Show a summary table
+
+## Dashboard
+
+Open `dashboard/index.html` in your browser to see the receipt ledger and metrics visualization.
+
+## Disputes
+
+```bash
+# Open a dispute
+python scripts/resolve_dispute.py open --request-id <request_id>
+
+# Resolve a dispute
+python scripts/resolve_dispute.py resolve --request-id <request_id> --final-payout 60000
+```
