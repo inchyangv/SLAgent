@@ -373,7 +373,7 @@ Provide a minimal facilitator-compatible module/service that:
 ---
 
 ## T-050 — Settlement Integration: Gateway → Contract
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-010, T-032, T-041
 
@@ -399,6 +399,14 @@ After receiving seller response and producing receipt, gateway must submit settl
 ### Deliverables
 - `gateway/app/settlement_client.py`
 - integration tests (local chain or mocked)
+
+### Completion Notes
+- gateway/app/settlement_client.py: settle_request() bridges gateway to facilitator
+- main.py: integrated settlement signing + submission after receipt generation
+- Response now includes tx_hash, gateway_signature in receipt
+- pyproject.toml: added facilitator to packages
+- 41 total tests passing
+- Validate: `pytest gateway/tests/ facilitator/tests/ -v`
 
 ---
 

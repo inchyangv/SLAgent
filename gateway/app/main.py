@@ -15,6 +15,7 @@ from gateway.app.metrics import RequestMetrics
 from gateway.app.models import Metrics, PricingResult
 from gateway.app.pricing import compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
+from gateway.app.settlement_client import settle_request
 from gateway.app.validators.json_schema import validate_json_schema
 from gateway.app.x402 import create_402_response, verify_payment_header
 
@@ -155,12 +156,29 @@ async def call_endpoint(request: Request) -> JSONResponse:
         request_body=body,
         response_body=seller_body,
     )
+
+    # Submit settlement on-chain
+    receipt_hash = receipt.hashes.get("receipt_hash", "")
+    settlement_result = settle_request(
+        request_id=request_id,
+        mandate_id="",
+        buyer=buyer,
+        seller=settings.seller_upstream_url,
+        max_price=pricing_decision.max_price,
+        payout=pricing_decision.payout,
+        receipt_hash=receipt_hash,
+    )
+
+    # Update receipt with settlement info
+    receipt.signatures = {"gateway_signature": settlement_result["gateway_signature"]}
     receipt_store.save(receipt)
+
+    tx_hash = settlement_result.get("tx_hash")
 
     logger.info(
         f"Settled: req={request_id} buyer={buyer} "
         f"payout={pricing_decision.payout} refund={pricing_decision.refund} "
-        f"rule={pricing_decision.rule_applied}"
+        f"rule={pricing_decision.rule_applied} tx={tx_hash}"
     )
 
     return JSONResponse(
@@ -171,7 +189,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "validation_passed": overall_pass,
             "payout": str(pricing_decision.payout),
             "refund": str(pricing_decision.refund),
-            "receipt_hash": receipt.hashes.get("receipt_hash", ""),
+            "receipt_hash": receipt_hash,
+            "tx_hash": tx_hash,
         }
     )
 
