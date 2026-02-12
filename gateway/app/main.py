@@ -58,7 +58,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
             max_price=max_price,
             payment_token_address=settings.payment_token,
             settlement_contract=settings.settlement_contract,
-            chain_id=2046399126,
+            chain_id=settings.chain_id,
             seller=settings.seller_upstream_url,
         )
 

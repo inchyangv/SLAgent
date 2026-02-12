@@ -2,12 +2,16 @@
 
 ## Chain & Token Strategy (MVP)
 
-### Network: SKALE Europa Hub
+### Network: SKALE Europa (Testnet for demo)
 
+- **Chain ID:** 1444673419
+- **RPC:** `https://testnet.skalenodes.com/v1/juicy-low-small-testnet`
+- **Key property:** Zero gas fees — ideal for high-frequency micro-settlements
+
+Alternative (mainnet):
 - **Chain ID:** 2046399126
 - **RPC:** `https://mainnet.skalenodes.com/v1/elated-tan-skat`
 - **Explorer:** `https://elated-tan-skat.explorer.mainnet.skalenodes.com`
-- **Key property:** Zero gas fees — ideal for high-frequency micro-settlements
 
 ### Token: ERC20 Mock (SLAToken)
 

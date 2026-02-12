@@ -127,6 +127,7 @@ class SettlementClient:
                 receipt_hash,
                 gateway_sig,
             ).build_transaction({
+                "chainId": int(self.w3.eth.chain_id),
                 "from": self.gateway_account.address,
                 "nonce": self.w3.eth.get_transaction_count(self.gateway_account.address),
                 "gas": 300_000,

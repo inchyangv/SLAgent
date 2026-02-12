@@ -608,6 +608,225 @@ Finalize what judges will see: clean docs, clean demo path, artifact links.
 
 ---
 
+## Hackathon Criteria Gap Tickets (Must Be Real)
+These tickets close the gap between:
+- current MVP (deterministic demo seller + HMAC payment simulation)
+- hackathon judging criteria emphasizing **real LLM usage**, **realistic commerce flows**, and **partner integrations**.
+
+---
+
+## T-120 — Real LLM Seller (Replace Dummy Seller)
+**Status:** TODO
+**Priority:** P0  
+**Depends on:** T-030, T-031
+
+### Description
+Replace the deterministic demo seller with a seller service that **actually calls Google Gemini** to generate an `invoice_v1`-compatible JSON response.
+
+### Tasks
+- Add `seller/` service (or extend `gateway/demo_seller/`) that:
+  - calls an LLM provider (choose 1 for MVP, keep interface pluggable)
+  - returns strict JSON that passes `invoice_v1` JSON schema
+  - supports `fast/slow/invalid` modes by controlling prompt / latency / corruption
+- Provider requirement:
+  - **Google Gemini only** (choose one: Gemini API via AI Studio, or Vertex AI Gemini)
+- Add robust JSON extraction:
+  - enforce `response_format`/JSON mode if available
+  - fallback: parse fenced JSON, validate, retry with correction prompt
+- Add env config:
+  - If using Gemini API: `GEMINI_API_KEY`, `GEMINI_MODEL`
+  - If using Vertex AI: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GEMINI_MODEL`
+- Update gateway seller URL defaults + docs
+- Add tests:
+  - unit tests for JSON extraction/validation logic
+  - contract-free E2E test that mocks the provider client
+
+### Acceptance Criteria
+- `POST /seller/call` returns schema-valid JSON when mode=`fast|slow`
+- mode=`invalid` reliably fails schema validation at the gateway
+- Demo run shows non-dummy content (LLM-generated) in receipts
+
+---
+
+## T-121 — Buyer Agent (Autonomous Buyer)
+**Status:** TODO
+**Priority:** P0  
+**Depends on:** T-040, T-090
+
+### Description
+Add a minimal "buyer agent" that behaves like an autonomous client:
+- decides which scenario to run
+- handles `402` challenge
+- submits paid request
+- verifies receipt invariants (`payout <= max_price`, refund correctness, schema pass/fail)
+
+### Tasks
+- Implement `buyer_agent/` CLI:
+  - one command runs: unpaid → paid flow
+  - prints a structured summary for presentation
+- Optional (P1): let the buyer agent use **Google Gemini** to decide `max_price` or pick seller
+- Add CI-safe tests with a mocked LLM provider and mock settlement
+
+### Acceptance Criteria
+- Running buyer agent demonstrates an "agentic commerce" flow end-to-end
+- Buyer agent refuses responses that fail invariants or schema (fail-closed)
+
+---
+
+## T-122 — Real x402 Integration (Replace HMAC Simulation)
+**Status:** TODO
+**Priority:** P0  
+**Depends on:** T-040
+
+### Description
+Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment authorization/verification flow suitable for judging ("commerce realism").
+
+### Tasks
+- Confirm target x402 spec + required headers/fields for the hackathon demo
+- Implement:
+  - unpaid request → `402` with `accepts` payload matching spec
+  - paid request → include proof/authorization per spec
+  - gateway verification of payment artifact
+- Add a compatibility mode:
+  - `PAYMENT_MODE=hmac|x402` so local dev can still run without keys
+- Add tests for:
+  - valid/invalid paid requests
+  - replay protection / nonce window
+
+### Acceptance Criteria
+- Paid request verification no longer relies on shared-secret HMAC
+- Demo script can exercise x402 mode with real proofs
+
+---
+
+## T-123 — Fix On-chain Funds Flow (Buyer Pays, Not Gateway)
+**Status:** TODO
+**Priority:** P0  
+**Depends on:** T-010, T-050, T-122
+
+### Description
+Current `SLASettlement.settle()` pulls funds from `msg.sender` (gateway tx sender), which is not commerce-realistic.
+Update the on-chain flow so **the buyer is the payer** (or the contract has escrowed funds from the buyer before settlement).
+
+### Tasks
+- Choose one:
+  - A) `deposit(requestId, buyer, amount)` by buyer, then `settle()` only distributes
+  - B) `permit`/meta-tx approach (buyer signature authorizes transfer)
+  - C) x402 payment transfers `max_price` directly to escrow, and `settle()` checks escrow balance
+- Update contract + gateway integration + tests accordingly
+- Ensure replay protection holds across deposit/settle
+
+### Acceptance Criteria
+- On-chain accounting shows buyer funds `max_price` (not gateway custody)
+- Settlement distributes payout/refund from escrowed buyer funds
+
+---
+
+## T-124 — Separate Seller Identity (URL vs Address)
+**Status:** TODO
+**Priority:** P0  
+**Depends on:** T-050
+
+### Description
+Gateway currently uses a seller upstream URL as the "seller" field, but on-chain settlement requires an EVM address.
+Introduce a proper `SELLER_ADDRESS` and include it in receipts and settlement calls.
+
+### Tasks
+- Add env: `SELLER_ADDRESS`
+- Update receipt fields and settlement params to use seller address
+- Update demo scripts and docs
+- Add validation: reject invalid addresses early
+
+### Acceptance Criteria
+- Live chain mode no longer normalizes seller/buyer to zero-address
+- On-chain payout goes to the configured seller address
+
+---
+
+## T-125 — Real On-chain Disputes (Gateway + CLI)
+**Status:** TODO
+**Priority:** P1  
+**Depends on:** T-011, T-080
+
+### Description
+Dispute endpoints are currently in-memory/mock. Implement actual calls:
+- `openDispute(requestId)`
+- `resolveDispute(requestId, finalPayout)`
+- `finalize(requestId)`
+
+### Tasks
+- Add contract ABI methods + chain submission in facilitator
+- Update gateway endpoints to call contract, not in-memory dict
+- Update dashboard to show dispute status from chain events (or gateway cache)
+- Add tests using a local anvil/fork or contract mock
+
+### Acceptance Criteria
+- Dispute open/resolve/finalize changes contract state on SKALE
+- Dashboard shows dispute state for at least one receipt
+
+---
+
+## T-126 — Receipt Persistence (SQLite) + Export
+**Status:** TODO
+**Priority:** P1  
+**Depends on:** T-030, T-070
+
+### Description
+Current receipt store is in-memory. Persist receipts for demo reliability and "ship-ability".
+
+### Tasks
+- Add SQLite-backed store with migrations
+- Add export:
+  - `GET /v1/receipts/export` (JSONL/CSV)
+- Update dashboard to handle larger datasets
+
+### Acceptance Criteria
+- Restarting gateway preserves receipts
+- Export endpoint works and is documented
+
+---
+
+## T-127 — Partner Integration: Google A2A/AP2 Message Layer
+**Status:** TODO
+**Priority:** P1  
+**Depends on:** T-020
+
+### Description
+Add an optional integration layer where mandates/receipts are encoded as explicit protocol messages (A2A/AP2 framing),
+so the demo isn't only "custom REST JSON".
+
+### Tasks
+- Define message envelopes + types for:
+  - Mandate request/response
+  - Receipt submission/ack
+  - Dispute open/resolve
+- Implement translation layer in gateway (REST ↔ protocol envelope)
+- Add docs and a minimal demo script that uses the envelope
+
+### Acceptance Criteria
+- At least one end-to-end call can run via the AP2/A2A envelope path
+- Docs show the message formats clearly
+
+---
+
+## T-128 — Partner Integration: ERC-8004 Hook (Orchestration)
+**Status:** TODO
+**Priority:** P2  
+**Depends on:** T-020, T-010
+
+### Description
+Add an ERC-8004-compatible orchestration hook (or minimal adapter) to show alignment with agent orchestration standards.
+
+### Tasks
+- Decide which minimal subset to support for the demo
+- Implement adapter contract/module and a demo call path
+- Document how it maps to mandate/receipt lifecycle
+
+### Acceptance Criteria
+- Repo contains a concrete artifact (code + demo) demonstrating ERC-8004 alignment
+
+---
+
 ## Stretch Tickets (Optional)
 ### T-200 — Add SQL Test Harness Validator
 **Status:** TODO  
