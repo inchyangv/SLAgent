@@ -91,7 +91,7 @@ Define how value moves in the demo: which network, which token, and how decimals
 ---
 
 ## T-010 — Settlement Contract (Core Split + Refund)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-001
 
@@ -120,6 +120,12 @@ Implement the on-chain settlement primitive:
 ### Deliverables
 - `contracts/src/Settlement.sol`
 - tests and deployment scripts
+
+### Completion Notes
+- contracts/src/SLASettlement.sol: settle() with ECDSA sig verification, replay protection, split+refund
+- contracts/src/SLAToken.sol: mock ERC20 (6 decimals)
+- contracts/test/SLASettlement.t.sol: 9 tests (full/partial/zero payout, replay, overflow, zero-addr, bad sig, event)
+- Validate: `cd contracts && forge test -v`
 
 ---
 
