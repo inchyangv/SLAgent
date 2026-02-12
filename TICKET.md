@@ -447,8 +447,8 @@ Provide a demo seller endpoint to generate:
 ---
 
 ## T-070 — Dashboard (Minimal, Must Show the Money)
-**Status:** TODO  
-**Priority:** P1  
+**Status:** DONE
+**Priority:** P1
 **Depends on:** T-050
 
 ### Description
@@ -471,6 +471,12 @@ Create a dashboard that visualizes:
 
 ### Deliverables
 - `dashboard/` + docs
+
+### Completion Notes
+- dashboard/index.html: static page with receipt table, stats cards, filter, detail modal
+- Connects to gateway API /v1/receipts, shows per-request metrics/validation/payout/refund
+- Click row to see full receipt JSON
+- Run: open dashboard/index.html in browser (or serve via any static server)
 
 ---
 
