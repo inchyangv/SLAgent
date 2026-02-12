@@ -77,6 +77,14 @@ scripts/         Demo and utility scripts
 - [Security](docs/SECURITY.md)
 - [Demo Guide](docs/DEMO.md)
 
+## Security Assumptions (MVP)
+
+- **Gateway is trusted** as the single attestation authority (future: multi-party signing)
+- **Resolver is centralized** (future: decentralized arbitration)
+- **Payments use HMAC** instead of real x402 on-chain proofs (future: real x402)
+- **In-memory storage** — restart loses state (future: persistent DB)
+- See [Security Notes](docs/SECURITY.md) for full threat model
+
 ## License
 
 MIT

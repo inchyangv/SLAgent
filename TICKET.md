@@ -544,7 +544,7 @@ Produce a repeatable script that runs the three scenarios in sequence and prints
 ---
 
 ## T-100 — Security Notes & Threat Model (Hackathon-ready)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P1  
 **Depends on:** T-050, T-011
 
@@ -565,6 +565,11 @@ Document realistic security assumptions and what MVP does/does not protect again
 
 ### Deliverables
 - `docs/SECURITY.md`
+
+### Completion Notes
+- docs/SECURITY.md: trust model, replay protection, dispute mechanism, known limitations
+- README.md: added security assumptions section
+- Covers: gateway trust, resolver centralization, HMAC vs x402, production recommendations
 
 ---
 
