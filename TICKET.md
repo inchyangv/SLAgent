@@ -411,7 +411,7 @@ After receiving seller response and producing receipt, gateway must submit settl
 ---
 
 ## T-060 — Seller Service (Demo Endpoint)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-000
 
@@ -435,6 +435,14 @@ Provide a demo seller endpoint to generate:
 
 ### Deliverables
 - `gateway/demo_seller/` (or separate `seller/`)
+
+### Completion Notes
+- gateway/demo_seller/main.py: POST /seller/call?mode=fast|slow|invalid
+- Fast: valid invoice ~100ms, Slow: valid invoice ~6s, Invalid: schema-fail response
+- Deterministic responses matching invoice_v1 schema
+- 6 tests covering all modes + health + default
+- Validate: `pytest gateway/tests/test_demo_seller.py -v`
+- Run: `uvicorn gateway.demo_seller.main:app --port 8001`
 
 ---
 
