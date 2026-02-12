@@ -339,7 +339,7 @@ Implement the payment gating flow:
 ---
 
 ## T-041 — Facilitator Service (Self-hosted Minimal)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-040
 
@@ -362,6 +362,13 @@ Provide a minimal facilitator-compatible module/service that:
 
 ### Deliverables
 - `facilitator/` code + docs
+
+### Completion Notes
+- facilitator/settlement.py: SettlementClient — sign_settlement, submit_settlement with idempotency
+- Architecture: library inside gateway (Option A)
+- Mock mode when no chain configured, real tx submission when RPC available
+- 5 tests: gateway address, signing, determinism, idempotency, mock mode
+- Validate: `pytest facilitator/tests/ -v`
 
 ---
 
