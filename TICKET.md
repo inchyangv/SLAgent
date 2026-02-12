@@ -304,7 +304,7 @@ Compute payout from mandate + measured metrics + validator result.
 ---
 
 ## T-040 — x402 Payment Gating (402 Challenge Flow)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-030, T-010
 
@@ -328,6 +328,13 @@ Implement the payment gating flow:
 ### Deliverables
 - `gateway/app/x402.py`
 - `docs/DEMO.md` updated
+
+### Completion Notes
+- gateway/app/x402.py: 402 challenge response, HMAC-based payment verification (MVP)
+- gateway/app/main.py: integrated x402 gating + validation + pricing in /v1/call
+- docs/DEMO.md: x402 flow documentation with curl examples
+- 36 total tests passing (5 x402 + 6 gateway + 7 hashing + 9 pricing + 8 validators + 1 smoke)
+- Validate: `pytest gateway/tests/ -v`
 
 ---
 

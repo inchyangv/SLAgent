@@ -1,8 +1,9 @@
-"""SLA-Pay v2 Gateway — FastAPI reverse proxy with metrics and receipts."""
+"""SLA-Pay v2 Gateway — FastAPI reverse proxy with metrics, validation, pricing, x402."""
 
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import httpx
@@ -11,10 +12,30 @@ from fastapi.responses import JSONResponse
 
 from gateway.app.config import settings
 from gateway.app.metrics import RequestMetrics
-from gateway.app.models import CallRequest, CallResponse, Metrics, PricingResult
+from gateway.app.models import Metrics, PricingResult
+from gateway.app.pricing import compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
+from gateway.app.validators.json_schema import validate_json_schema
+from gateway.app.x402 import create_402_response, verify_payment_header
+
+logger = logging.getLogger("sla-gateway")
 
 app = FastAPI(title="SLA-Pay v2 Gateway", version="0.1.0")
+
+# Default mandate for demo (matches PROJECT.md)
+DEFAULT_MANDATE = {
+    "max_price": "100000",
+    "base_pay": "60000",
+    "bonus_rules": {
+        "type": "latency_tiers",
+        "tiers": [
+            {"lte_ms": 2000, "payout": "100000"},
+            {"lte_ms": 5000, "payout": "80000"},
+            {"lte_ms": 999999999, "payout": "60000"},
+        ],
+    },
+    "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
+}
 
 
 @app.get("/v1/health")
@@ -24,8 +45,23 @@ async def health() -> dict[str, str]:
 
 @app.post("/v1/call")
 async def call_endpoint(request: Request) -> JSONResponse:
-    """Main proxy endpoint. Forwards to seller, measures metrics, builds receipt."""
+    """Main proxy endpoint with x402 payment gating."""
     body = await request.body()
+    mandate = DEFAULT_MANDATE
+    max_price = mandate["max_price"]
+
+    # x402: check for payment
+    payment_info = verify_payment_header(request, max_price=max_price)
+    if payment_info is None:
+        return create_402_response(
+            max_price=max_price,
+            payment_token_address=settings.payment_token,
+            settlement_contract=settings.settlement_contract,
+            chain_id=2046399126,
+            seller=settings.seller_upstream_url,
+        )
+
+    buyer = payment_info["buyer"]
 
     try:
         payload = json.loads(body)
@@ -49,21 +85,20 @@ async def call_endpoint(request: Request) -> JSONResponse:
             rm.mark_done()
         except httpx.RequestError as e:
             rm.mark_done()
-            # Build failure receipt
             metrics = Metrics(ttft_ms=rm.ttft_ms, latency_ms=rm.latency_ms)
             receipt = build_receipt(
                 request_id=request_id,
                 mandate_id="",
-                buyer="",
+                buyer=buyer,
                 seller="",
                 gateway_addr="",
                 metrics=metrics,
                 outcome={"success": False, "error_code": "upstream_error"},
                 validation={"overall_pass": False, "results": []},
                 pricing=PricingResult(
-                    max_price="0",
+                    max_price=max_price,
                     computed_payout="0",
-                    computed_refund="0",
+                    computed_refund=max_price,
                     rule_applied="error",
                 ),
                 request_body=body,
@@ -77,21 +112,41 @@ async def call_endpoint(request: Request) -> JSONResponse:
 
     metrics = Metrics(ttft_ms=rm.ttft_ms, latency_ms=rm.latency_ms)
 
-    # Placeholder: validation and pricing will be wired in later tickets
-    outcome: dict[str, Any] = {"success": True, "error_code": None}
-    validation: dict[str, Any] = {"overall_pass": True, "results": []}
+    # Run validators
+    success = seller_resp.status_code == 200
+    validation_results = []
+    overall_pass = True
+
+    if success:
+        for v in mandate.get("validators", []):
+            if v["type"] == "json_schema":
+                result = validate_json_schema(seller_json, v.get("schema_id", ""))
+                validation_results.append(result)
+                if not result["pass"]:
+                    overall_pass = False
+
+    outcome: dict[str, Any] = {"success": success, "error_code": None if success else "http_error"}
+    validation: dict[str, Any] = {"overall_pass": overall_pass, "results": validation_results}
+
+    # Compute pricing
+    pricing_decision = compute_payout(
+        mandate=mandate,
+        latency_ms=metrics.latency_ms,
+        success=success,
+        validation_pass=overall_pass,
+    )
     pricing = PricingResult(
-        max_price="0",
-        computed_payout="0",
-        computed_refund="0",
-        rule_applied="placeholder",
+        max_price=str(pricing_decision.max_price),
+        computed_payout=str(pricing_decision.payout),
+        computed_refund=str(pricing_decision.refund),
+        rule_applied=pricing_decision.rule_applied,
     )
 
     receipt = build_receipt(
         request_id=request_id,
         mandate_id="",
-        buyer="",
-        seller="",
+        buyer=buyer,
+        seller=settings.seller_upstream_url,
         gateway_addr="",
         metrics=metrics,
         outcome=outcome,
@@ -102,12 +157,20 @@ async def call_endpoint(request: Request) -> JSONResponse:
     )
     receipt_store.save(receipt)
 
+    logger.info(
+        f"Settled: req={request_id} buyer={buyer} "
+        f"payout={pricing_decision.payout} refund={pricing_decision.refund} "
+        f"rule={pricing_decision.rule_applied}"
+    )
+
     return JSONResponse(
         content={
             "request_id": request_id,
             "seller_response": seller_json,
             "metrics": {"ttft_ms": metrics.ttft_ms, "latency_ms": metrics.latency_ms},
-            "validation_passed": True,
+            "validation_passed": overall_pass,
+            "payout": str(pricing_decision.payout),
+            "refund": str(pricing_decision.refund),
             "receipt_hash": receipt.hashes.get("receipt_hash", ""),
         }
     )
