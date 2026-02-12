@@ -205,7 +205,7 @@ Codify SLA Mandate and Receipt structures as JSON schema, plus hashing rules, so
 ---
 
 ## T-030 — Gateway Skeleton (FastAPI Reverse Proxy)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-000
 
@@ -230,6 +230,14 @@ Build the FastAPI gateway that proxies to seller service, measures metrics, vali
 ### Deliverables
 - `gateway/app/main.py` etc.
 - tests for core paths
+
+### Completion Notes
+- gateway/app/main.py: FastAPI with POST /v1/call, GET /v1/health, GET /v1/receipts/{id}, GET /v1/receipts
+- gateway/app/config.py, models.py, metrics.py, receipt.py
+- TTFT/latency measurement via RequestMetrics
+- In-memory receipt storage with build_receipt + hashing
+- 6 gateway tests + 7 hashing tests + 1 smoke = 14 total
+- Validate: `pytest gateway/tests/ -v`
 
 ---
 
