@@ -169,7 +169,7 @@ Add an MVP dispute mechanism with bonding to deter spam. For MVP safety and simp
 ---
 
 ## T-020 — SLA Mandate & Receipt Schemas (Canonical)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-000
 
@@ -195,6 +195,12 @@ Codify SLA Mandate and Receipt structures as JSON schema, plus hashing rules, so
 ### Deliverables
 - `docs/API.md`
 - reference implementation code in gateway (or shared lib)
+
+### Completion Notes
+- docs/API.md: Mandate + Receipt JSON schemas, hashing rules, test vector references
+- gateway/app/hashing.py: canonical_json, keccak256, compute_mandate_id, compute_receipt_hash
+- gateway/tests/test_hashing.py: 7 test vectors (determinism, field exclusion, known hash)
+- Validate: `pytest gateway/tests/test_hashing.py -v`
 
 ---
 
