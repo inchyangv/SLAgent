@@ -53,10 +53,17 @@ forge test -v
 
 ### Dashboard
 
+Open `dashboard/index.html` in your browser (static page, no build needed).
+
+### End-to-End Demo
+
 ```bash
-cd dashboard
-npm install
-npm run dev
+# Start seller + gateway
+uvicorn gateway.demo_seller.main:app --port 8001 &
+uvicorn gateway.app.main:app --port 8000 &
+
+# Run three demo scenarios
+python scripts/run_demo.py
 ```
 
 ## Project Structure
@@ -76,6 +83,7 @@ scripts/         Demo and utility scripts
 - [API Schemas](docs/API.md)
 - [Security](docs/SECURITY.md)
 - [Demo Guide](docs/DEMO.md)
+- [Submission](docs/SUBMISSION.md)
 
 ## Security Assumptions (MVP)
 

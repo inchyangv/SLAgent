@@ -574,7 +574,7 @@ Document realistic security assumptions and what MVP does/does not protect again
 ---
 
 ## T-110 — Packaging & Submission Checklist
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** All P0 tickets
 
@@ -600,6 +600,11 @@ Finalize what judges will see: clean docs, clean demo path, artifact links.
 
 ### Deliverables
 - `docs/SUBMISSION.md` + README final pass
+
+### Completion Notes
+- docs/SUBMISSION.md: full submission doc with repo overview, demo steps, track relevance
+- README.md: final pass with end-to-end demo instructions, submission link
+- Quick start < 5 minutes documented
 
 ---
 
