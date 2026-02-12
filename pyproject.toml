@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["gateway*", "facilitator*"]
+include = ["gateway*", "facilitator*", "seller*"]
 
 [project]
 name = "sla-pay-v2"
@@ -43,5 +43,5 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
-testpaths = ["gateway/tests", "facilitator/tests"]
+testpaths = ["gateway/tests", "facilitator/tests", "seller/tests"]
 asyncio_mode = "auto"

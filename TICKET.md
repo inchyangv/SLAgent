@@ -616,8 +616,8 @@ These tickets close the gap between:
 ---
 
 ## T-120 — Real LLM Seller (Replace Dummy Seller)
-**Status:** TODO
-**Priority:** P0  
+**Status:** DONE
+**Priority:** P0
 **Depends on:** T-030, T-031
 
 ### Description
@@ -645,6 +645,18 @@ Replace the deterministic demo seller with a seller service that **actually call
 - `POST /seller/call` returns schema-valid JSON when mode=`fast|slow`
 - mode=`invalid` reliably fails schema validation at the gateway
 - Demo run shows non-dummy content (LLM-generated) in receipts
+
+### Completion Notes
+- seller/main.py: FastAPI app with POST /seller/call, GET /seller/health
+- seller/gemini_client.py: thin httpx-based Gemini REST API client (no heavy SDK)
+- seller/json_extractor.py: robust JSON extraction (direct, fenced, embedded) + schema validation
+- Modes: fast (immediate LLM call), slow (+4s delay), invalid (strips required fields)
+- Fallback: deterministic responses when GEMINI_API_KEY missing or SELLER_FALLBACK=true
+- Retry logic: 2 retries with correction on LLM failures
+- 21 new tests (10 JSON extractor + 11 seller endpoint with mock Gemini)
+- 68 total tests passing
+- Validate: `pytest seller/tests/ -v`
+- Run: `uvicorn seller.main:app --port 8001`
 
 ---
 
