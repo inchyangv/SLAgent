@@ -15,7 +15,12 @@ from gateway.app.metrics import RequestMetrics
 from gateway.app.models import Metrics, PricingResult
 from gateway.app.pricing import compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
-from gateway.app.settlement_client import settle_request
+from gateway.app.settlement_client import (
+    settle_request,
+    submit_dispute_open,
+    submit_dispute_resolve,
+    submit_finalize,
+)
 from gateway.app.validators.json_schema import validate_json_schema
 from gateway.app.x402 import create_402_response, verify_payment_header
 
@@ -217,7 +222,7 @@ async def list_receipts(limit: int = 50) -> JSONResponse:
     return JSONResponse(content=[r.model_dump() for r in receipts])
 
 
-# --- Dispute endpoints (MVP: mock on-chain, track state in-memory) ---
+# --- Dispute endpoints (in-memory cache + on-chain submission) ---
 
 _dispute_state: dict[str, dict] = {}
 
@@ -235,18 +240,24 @@ async def open_dispute(request: Request) -> JSONResponse:
     if request_id in _dispute_state:
         raise HTTPException(status_code=409, detail="Dispute already open")
 
+    # Submit on-chain (mock if no chain configured)
+    chain_result = submit_dispute_open(request_id=request_id)
+
     _dispute_state[request_id] = {
         "status": "DISPUTED",
         "original_payout": receipt.pricing.computed_payout if receipt.pricing else "0",
         "final_payout": None,
+        "open_tx_hash": chain_result.get("tx_hash"),
+        "mode": chain_result.get("mode", "mock"),
     }
 
-    logger.info(f"Dispute opened: {request_id}")
+    logger.info(f"Dispute opened: {request_id} mode={chain_result.get('mode')}")
 
     return JSONResponse(content={
         "request_id": request_id,
         "dispute_status": "DISPUTED",
         "message": "Dispute opened. Awaiting resolver decision.",
+        "tx_hash": chain_result.get("tx_hash"),
     })
 
 
@@ -264,9 +275,16 @@ async def resolve_dispute(request: Request) -> JSONResponse:
     if dispute["status"] != "DISPUTED":
         raise HTTPException(status_code=409, detail="Dispute already resolved")
 
+    # Submit on-chain (mock if no chain configured)
+    chain_result = submit_dispute_resolve(
+        request_id=request_id,
+        final_payout=int(final_payout),
+    )
+
     original = dispute["original_payout"]
     dispute["status"] = "RESOLVED"
     dispute["final_payout"] = str(final_payout)
+    dispute["resolve_tx_hash"] = chain_result.get("tx_hash")
 
     logger.info(f"Dispute resolved: {request_id} original={original} final={final_payout}")
 
@@ -275,6 +293,34 @@ async def resolve_dispute(request: Request) -> JSONResponse:
         "dispute_status": "RESOLVED",
         "original_payout": original,
         "final_payout": str(final_payout),
+        "tx_hash": chain_result.get("tx_hash"),
+    })
+
+
+@app.post("/v1/disputes/finalize")
+async def finalize_settlement(request: Request) -> JSONResponse:
+    """Finalize a settled request after dispute window (no dispute)."""
+    body = await request.json()
+    request_id = body.get("request_id", "")
+
+    receipt = receipt_store.get(request_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    chain_result = submit_finalize(request_id=request_id)
+
+    if request_id not in _dispute_state:
+        _dispute_state[request_id] = {"status": "FINALIZED"}
+    else:
+        _dispute_state[request_id]["status"] = "FINALIZED"
+    _dispute_state[request_id]["finalize_tx_hash"] = chain_result.get("tx_hash")
+
+    logger.info(f"Finalized: {request_id}")
+
+    return JSONResponse(content={
+        "request_id": request_id,
+        "dispute_status": "FINALIZED",
+        "tx_hash": chain_result.get("tx_hash"),
     })
 
 

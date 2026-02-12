@@ -796,8 +796,8 @@ Introduce a proper `SELLER_ADDRESS` and include it in receipts and settlement ca
 ---
 
 ## T-125 — Real On-chain Disputes (Gateway + CLI)
-**Status:** TODO
-**Priority:** P1  
+**Status:** DONE
+**Priority:** P1
 **Depends on:** T-011, T-080
 
 ### Description
@@ -815,6 +815,16 @@ Dispute endpoints are currently in-memory/mock. Implement actual calls:
 ### Acceptance Criteria
 - Dispute open/resolve/finalize changes contract state on SKALE
 - Dashboard shows dispute state for at least one receipt
+
+### Completion Notes
+- settlement_client.py: full ABI with deposit, settle, openDispute, resolveDispute, finalize
+- submit_dispute_open(), submit_dispute_resolve(), submit_finalize() functions
+- Gateway endpoints updated: POST /v1/disputes/open, resolve, finalize call chain
+- In-memory cache + on-chain submission (mock when chain not configured)
+- Response now includes tx_hash for all dispute operations
+- CLI updated: added finalize + status commands
+- 81 Python tests + 25 Foundry tests passing
+- Validate: `pytest gateway/tests/ -v`
 
 ---
 
