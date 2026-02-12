@@ -210,20 +210,41 @@ async def call_endpoint(request: Request) -> JSONResponse:
     )
 
 
-@app.get("/v1/receipts/{request_id}")
-async def get_receipt(request_id: str) -> JSONResponse:
-    """Retrieve a receipt by request_id."""
-    receipt = receipt_store.get(request_id)
-    if receipt is None:
-        raise HTTPException(status_code=404, detail="Receipt not found")
-    return JSONResponse(content=receipt.model_dump())
-
-
 @app.get("/v1/receipts")
 async def list_receipts(limit: int = 50) -> JSONResponse:
     """List recent receipts."""
     receipts = receipt_store.list_recent(limit)
     return JSONResponse(content=[r.model_dump() for r in receipts])
+
+
+@app.get("/v1/receipts/search")
+async def search_receipts(
+    buyer: str | None = None,
+    seller: str | None = None,
+    min_payout: int | None = None,
+    max_latency_ms: int | None = None,
+    validation_pass: bool | None = None,
+    rule_applied: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> JSONResponse:
+    """Search receipts by indexed fields (buyer, seller, payout, latency, etc.)."""
+    receipts = receipt_store.search(
+        buyer=buyer,
+        seller=seller,
+        min_payout=min_payout,
+        max_latency_ms=max_latency_ms,
+        validation_pass=validation_pass,
+        rule_applied=rule_applied,
+        limit=limit,
+        offset=offset,
+    )
+    return JSONResponse(content={
+        "results": [r.model_dump() for r in receipts],
+        "count": len(receipts),
+        "limit": limit,
+        "offset": offset,
+    })
 
 
 @app.get("/v1/receipts/export")
@@ -235,6 +256,15 @@ async def export_receipts() -> JSONResponse:
         media_type="application/x-ndjson",
         headers={"Content-Disposition": "attachment; filename=receipts.jsonl"},
     )
+
+
+@app.get("/v1/receipts/{request_id}")
+async def get_receipt(request_id: str) -> JSONResponse:
+    """Retrieve a receipt by request_id."""
+    receipt = receipt_store.get(request_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return JSONResponse(content=receipt.model_dump())
 
 
 # --- Dispute endpoints (in-memory cache + on-chain submission) ---
