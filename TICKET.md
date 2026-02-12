@@ -130,7 +130,7 @@ Implement the on-chain settlement primitive:
 ---
 
 ## T-011 — Dispute Contract (Minimal Escrow or Delay Mechanism)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-010
 
@@ -157,6 +157,14 @@ Add an MVP dispute mechanism with bonding to deter spam. For MVP safety and simp
 
 ### Deliverables
 - updated contract + tests + docs
+
+### Completion Notes
+- SLASettlement.sol extended: escrow-based delayed finalization, PENDING→DISPUTED→FINALIZED states
+- openDispute(requestId) with bond, resolveDispute(requestId, finalPayout) by resolver
+- finalize(requestId) after window expires without dispute
+- Bond returned to disputer if they win, slashed to resolver if they lose
+- 18 Foundry tests covering settle, finalize, dispute open/resolve paths
+- Validate: `cd contracts && forge test -v`
 
 ---
 

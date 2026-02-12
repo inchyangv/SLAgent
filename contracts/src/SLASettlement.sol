@@ -6,13 +6,33 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-/// @title SLASettlement — Core settlement contract for SLA-Pay v2
-/// @notice Receives max_price, splits payout to seller + refund to buyer.
-///         Emits receipt hash on-chain. Prevents replay via requestId uniqueness.
+/// @title SLASettlement — Settlement + Dispute contract for SLA-Pay v2
+/// @notice Escrowed settlement with delayed finalization and bonded disputes.
+///         Funds are held until dispute window passes or dispute is resolved.
 contract SLASettlement {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
+
+    // --- Enums ---
+    enum Status { NONE, PENDING, DISPUTED, FINALIZED }
+
+    // --- Structs ---
+    struct Settlement {
+        bytes32 mandateId;
+        address buyer;
+        address seller;
+        uint256 maxPrice;
+        uint256 payout;
+        bytes32 receiptHash;
+        uint256 finalizeAfter; // timestamp after which seller can withdraw
+        Status status;
+    }
+
+    struct Dispute {
+        address disputer;
+        uint256 bond;
+    }
 
     // --- Events ---
     event Settled(
@@ -25,37 +45,65 @@ contract SLASettlement {
         bytes32 receiptHash
     );
 
+    event DisputeOpened(
+        bytes32 indexed requestId,
+        address disputer,
+        uint256 bond
+    );
+
+    event DisputeResolved(
+        bytes32 indexed requestId,
+        uint256 originalPayout,
+        uint256 finalPayout,
+        bool disputerWon
+    );
+
+    event Finalized(
+        bytes32 indexed requestId,
+        uint256 payout,
+        uint256 refund
+    );
+
     // --- State ---
     IERC20 public immutable token;
     address public immutable gateway;
+    address public immutable resolver;
+    uint256 public immutable disputeWindow; // seconds
+    uint256 public immutable bondAmount;
 
-    /// @notice Tracks settled requestIds to prevent replay
-    mapping(bytes32 => bool) public settled;
+    mapping(bytes32 => Settlement) public settlements;
+    mapping(bytes32 => Dispute) public disputes;
 
     // --- Errors ---
     error AlreadySettled();
     error PayoutExceedsMax();
     error ZeroAddress();
     error InvalidSignature();
+    error NotPending();
+    error NotDisputed();
+    error DisputeWindowActive();
+    error DisputeWindowExpired();
+    error OnlyResolver();
+    error FinalPayoutExceedsMax();
 
-    constructor(address _token, address _gateway) {
+    constructor(
+        address _token,
+        address _gateway,
+        address _resolver,
+        uint256 _disputeWindow,
+        uint256 _bondAmount
+    ) {
         require(_token != address(0), "token=0");
         require(_gateway != address(0), "gateway=0");
+        require(_resolver != address(0), "resolver=0");
         token = IERC20(_token);
         gateway = _gateway;
+        resolver = _resolver;
+        disputeWindow = _disputeWindow;
+        bondAmount = _bondAmount;
     }
 
-    /// @notice Settle a request: pay seller, refund buyer, emit receipt hash.
-    /// @dev The caller must have approved this contract to spend maxPrice tokens.
-    ///      Gateway signs: keccak256(abi.encodePacked(mandateId, requestId, buyer, seller, maxPrice, payout, receiptHash))
-    /// @param mandateId   Hash identifying the SLA mandate
-    /// @param requestId   Unique request identifier (replay key)
-    /// @param buyer       Address to receive refund
-    /// @param seller      Address to receive payout
-    /// @param maxPrice    Total amount locked for this request
-    /// @param payout      Amount to pay seller (must be <= maxPrice)
-    /// @param receiptHash Hash of the full performance receipt
-    /// @param gatewaySig  Gateway's ECDSA signature over settlement params
+    /// @notice Submit a settlement — funds escrowed in contract until finalized.
     function settle(
         bytes32 mandateId,
         bytes32 requestId,
@@ -66,7 +114,7 @@ contract SLASettlement {
         bytes32 receiptHash,
         bytes calldata gatewaySig
     ) external {
-        if (settled[requestId]) revert AlreadySettled();
+        if (settlements[requestId].status != Status.NONE) revert AlreadySettled();
         if (payout > maxPrice) revert PayoutExceedsMax();
         if (buyer == address(0) || seller == address(0)) revert ZeroAddress();
 
@@ -78,16 +126,92 @@ contract SLASettlement {
         address recovered = digest.recover(gatewaySig);
         if (recovered != gateway) revert InvalidSignature();
 
-        // Mark as settled (replay protection)
-        settled[requestId] = true;
+        // Store settlement in escrow
+        settlements[requestId] = Settlement({
+            mandateId: mandateId,
+            buyer: buyer,
+            seller: seller,
+            maxPrice: maxPrice,
+            payout: payout,
+            receiptHash: receiptHash,
+            finalizeAfter: block.timestamp + disputeWindow,
+            status: Status.PENDING
+        });
 
-        // Transfer: caller sends maxPrice to this contract, then we split
-        token.safeTransferFrom(msg.sender, seller, payout);
-        uint256 refund = maxPrice - payout;
-        if (refund > 0) {
-            token.safeTransferFrom(msg.sender, buyer, refund);
+        // Pull maxPrice into escrow
+        token.safeTransferFrom(msg.sender, address(this), maxPrice);
+
+        emit Settled(mandateId, requestId, buyer, seller, payout, maxPrice - payout, receiptHash);
+    }
+
+    /// @notice Open a dispute (requires bond). Must be within dispute window.
+    function openDispute(bytes32 requestId) external {
+        Settlement storage s = settlements[requestId];
+        if (s.status != Status.PENDING) revert NotPending();
+        if (block.timestamp >= s.finalizeAfter) revert DisputeWindowExpired();
+
+        // Pull bond from disputer
+        token.safeTransferFrom(msg.sender, address(this), bondAmount);
+
+        s.status = Status.DISPUTED;
+        disputes[requestId] = Dispute({
+            disputer: msg.sender,
+            bond: bondAmount
+        });
+
+        emit DisputeOpened(requestId, msg.sender, bondAmount);
+    }
+
+    /// @notice Resolver decides final payout. Handles bond slashing.
+    function resolveDispute(bytes32 requestId, uint256 finalPayout) external {
+        if (msg.sender != resolver) revert OnlyResolver();
+        Settlement storage s = settlements[requestId];
+        if (s.status != Status.DISPUTED) revert NotDisputed();
+        if (finalPayout > s.maxPrice) revert FinalPayoutExceedsMax();
+
+        Dispute memory d = disputes[requestId];
+        uint256 originalPayout = s.payout;
+        bool disputerWon = (finalPayout != originalPayout);
+
+        // Update payout and finalize
+        s.payout = finalPayout;
+        s.status = Status.FINALIZED;
+
+        // Distribute escrowed funds
+        _distribute(s);
+
+        // Handle bond
+        if (disputerWon) {
+            // Return bond to disputer
+            token.safeTransfer(d.disputer, d.bond);
+        } else {
+            // Slash bond — send to resolver (protocol revenue)
+            token.safeTransfer(resolver, d.bond);
         }
 
-        emit Settled(mandateId, requestId, buyer, seller, payout, refund, receiptHash);
+        emit DisputeResolved(requestId, originalPayout, finalPayout, disputerWon);
+    }
+
+    /// @notice Finalize after dispute window passes without dispute.
+    function finalize(bytes32 requestId) external {
+        Settlement storage s = settlements[requestId];
+        if (s.status != Status.PENDING) revert NotPending();
+        if (block.timestamp < s.finalizeAfter) revert DisputeWindowActive();
+
+        s.status = Status.FINALIZED;
+        _distribute(s);
+
+        emit Finalized(requestId, s.payout, s.maxPrice - s.payout);
+    }
+
+    /// @dev Internal: send payout to seller, refund to buyer
+    function _distribute(Settlement storage s) internal {
+        if (s.payout > 0) {
+            token.safeTransfer(s.seller, s.payout);
+        }
+        uint256 refund = s.maxPrice - s.payout;
+        if (refund > 0) {
+            token.safeTransfer(s.buyer, refund);
+        }
     }
 }
