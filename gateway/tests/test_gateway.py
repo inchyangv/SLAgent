@@ -13,9 +13,9 @@ from gateway.app.x402 import create_payment_token
 
 @pytest.fixture(autouse=True)
 def clear_receipts():
-    receipt_store._receipts.clear()
+    receipt_store._cache.clear()
     yield
-    receipt_store._receipts.clear()
+    receipt_store._cache.clear()
 
 
 client = TestClient(app)

@@ -222,6 +222,17 @@ async def list_receipts(limit: int = 50) -> JSONResponse:
     return JSONResponse(content=[r.model_dump() for r in receipts])
 
 
+@app.get("/v1/receipts/export")
+async def export_receipts() -> JSONResponse:
+    """Export all receipts as JSONL."""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=receipt_store.export_jsonl(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": "attachment; filename=receipts.jsonl"},
+    )
+
+
 # --- Dispute endpoints (in-memory cache + on-chain submission) ---
 
 _dispute_state: dict[str, dict] = {}

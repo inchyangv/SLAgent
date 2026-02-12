@@ -829,8 +829,8 @@ Dispute endpoints are currently in-memory/mock. Implement actual calls:
 ---
 
 ## T-126 — Receipt Persistence (SQLite) + Export
-**Status:** TODO
-**Priority:** P1  
+**Status:** DONE
+**Priority:** P1
 **Depends on:** T-030, T-070
 
 ### Description
@@ -845,6 +845,16 @@ Current receipt store is in-memory. Persist receipts for demo reliability and "s
 ### Acceptance Criteria
 - Restarting gateway preserves receipts
 - Export endpoint works and is documented
+
+### Completion Notes
+- receipt.py: ReceiptStore with optional SQLite backend (RECEIPT_DB_PATH env var)
+- Auto-creates table, loads existing receipts on startup
+- In-memory cache + SQLite write-through when configured
+- GET /v1/receipts/export: JSONL export endpoint
+- .env.example: added RECEIPT_DB_PATH=data/receipts.db
+- Backward compatible: empty RECEIPT_DB_PATH = in-memory only
+- 81 Python tests passing
+- Validate: `pytest gateway/tests/ -v`
 
 ---
 
