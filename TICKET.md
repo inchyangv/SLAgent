@@ -274,7 +274,7 @@ Implement JSON schema validation as the MVP proof of correctness.
 ---
 
 ## T-032 — Pricing Engine (Base + Bonus Rules)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-030, T-020
 
@@ -294,6 +294,12 @@ Compute payout from mandate + measured metrics + validator result.
 
 ### Deliverables
 - `gateway/app/pricing.py` + tests
+
+### Completion Notes
+- gateway/app/pricing.py: compute_payout() with latency tier rules, fail-closed on error/validation
+- Integer-only arithmetic, payout <= max_price invariant, refund = max_price - payout
+- 9 tests matching PROJECT.md example: fast/mid/slow tiers, error, validation fail, invariants
+- Validate: `pytest gateway/tests/test_pricing.py -v`
 
 ---
 
