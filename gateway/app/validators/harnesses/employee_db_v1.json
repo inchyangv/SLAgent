@@ -1,0 +1,33 @@
+{
+  "harness_id": "employee_db_v1",
+  "description": "Sample employee database — validates SELECT queries against a 5-row employees table.",
+  "sql_field": "sql_query",
+  "setup_sql": [
+    "CREATE TABLE employees (id INTEGER PRIMARY KEY, name TEXT NOT NULL, department TEXT NOT NULL, salary REAL NOT NULL, hire_date TEXT NOT NULL)",
+    "INSERT INTO employees VALUES (1, 'Alice', 'Engineering', 120000, '2022-01-15')",
+    "INSERT INTO employees VALUES (2, 'Bob', 'Sales', 80000, '2021-06-01')",
+    "INSERT INTO employees VALUES (3, 'Carol', 'Engineering', 110000, '2023-03-10')",
+    "INSERT INTO employees VALUES (4, 'Dave', 'Marketing', 90000, '2022-09-20')",
+    "INSERT INTO employees VALUES (5, 'Eve', 'Engineering', 130000, '2020-11-05')"
+  ],
+  "test_cases": [
+    {
+      "name": "total_count",
+      "description": "Query must return the total employee count",
+      "expected_rows": [[5]],
+      "ordered": false
+    },
+    {
+      "name": "engineering_count",
+      "description": "Query 'SELECT COUNT(*) FROM employees WHERE department = \"Engineering\"' must return 3",
+      "expected_rows": [[3]],
+      "ordered": false
+    },
+    {
+      "name": "avg_salary",
+      "description": "Query must return correct average salary",
+      "expected_rows": [[106000.0]],
+      "ordered": false
+    }
+  ]
+}
