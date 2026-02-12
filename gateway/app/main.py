@@ -64,7 +64,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
             payment_token_address=settings.payment_token,
             settlement_contract=settings.settlement_contract,
             chain_id=settings.chain_id,
-            seller=settings.seller_upstream_url,
+            seller=settings.seller_address or settings.seller_upstream_url,
         )
 
     buyer = payment_info["buyer"]
@@ -152,7 +152,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
         request_id=request_id,
         mandate_id="",
         buyer=buyer,
-        seller=settings.seller_upstream_url,
+        seller=settings.seller_address or settings.seller_upstream_url,
         gateway_addr="",
         metrics=metrics,
         outcome=outcome,
@@ -164,11 +164,12 @@ async def call_endpoint(request: Request) -> JSONResponse:
 
     # Submit settlement on-chain
     receipt_hash = receipt.hashes.get("receipt_hash", "")
+    seller_addr = settings.seller_address or settings.seller_upstream_url
     settlement_result = settle_request(
         request_id=request_id,
         mandate_id="",
         buyer=buyer,
-        seller=settings.seller_upstream_url,
+        seller=seller_addr,
         max_price=pricing_decision.max_price,
         payout=pricing_decision.payout,
         receipt_hash=receipt_hash,

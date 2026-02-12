@@ -175,6 +175,7 @@ def test_x402_create_and_verify(monkeypatch):
             mock_settings.payment_token = asset
             mock_settings.settlement_contract = "0x0000000000000000000000000000000000000002"
             mock_settings.seller_upstream_url = "http://localhost:8001"
+            mock_settings.seller_address = "0x0000000000000000000000000000000000000001"
 
             resp = client.post(
                 "/v1/call",

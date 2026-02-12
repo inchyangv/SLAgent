@@ -78,9 +78,15 @@ def settle_request(
     request_id_bytes = Web3.keccak(text=request_id)
     receipt_hash_bytes = bytes.fromhex(receipt_hash[2:]) if receipt_hash.startswith("0x") else Web3.keccak(text=receipt_hash)
 
-    # Normalize addresses
-    buyer_addr = buyer if buyer.startswith("0x") and len(buyer) == 42 else "0x" + "00" * 20
-    seller_addr = seller if seller.startswith("0x") and len(seller) == 42 else "0x" + "00" * 20
+    # Normalize addresses — reject non-EVM addresses early
+    def _normalize_addr(addr: str, label: str) -> str:
+        if addr.startswith("0x") and len(addr) == 42:
+            return Web3.to_checksum_address(addr)
+        logger.warning(f"{label} is not a valid EVM address: {addr}, using zero-address")
+        return "0x" + "00" * 20
+
+    buyer_addr = _normalize_addr(buyer, "buyer")
+    seller_addr = _normalize_addr(seller, "seller")
 
     try:
         # Sign

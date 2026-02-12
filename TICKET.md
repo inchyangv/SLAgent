@@ -766,8 +766,8 @@ Update the on-chain flow so **the buyer is the payer** (or the contract has escr
 ---
 
 ## T-124 — Separate Seller Identity (URL vs Address)
-**Status:** TODO
-**Priority:** P0  
+**Status:** DONE
+**Priority:** P0
 **Depends on:** T-050
 
 ### Description
@@ -783,6 +783,15 @@ Introduce a proper `SELLER_ADDRESS` and include it in receipts and settlement ca
 ### Acceptance Criteria
 - Live chain mode no longer normalizes seller/buyer to zero-address
 - On-chain payout goes to the configured seller address
+
+### Completion Notes
+- config.py: added SELLER_ADDRESS, BUYER_ADDRESS env vars
+- main.py: uses seller_address for receipts, 402 response, and settlement calls
+- settlement_client.py: address normalization with checksum + warning on invalid
+- .env.example: updated with SELLER_ADDRESS, BUYER_ADDRESS
+- Fallback: uses seller_upstream_url if SELLER_ADDRESS not set
+- 81 Python tests passing
+- Validate: `pytest gateway/tests/ -v`
 
 ---
 
