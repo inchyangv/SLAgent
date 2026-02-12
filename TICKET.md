@@ -661,8 +661,8 @@ Replace the deterministic demo seller with a seller service that **actually call
 ---
 
 ## T-121 — Buyer Agent (Autonomous Buyer)
-**Status:** TODO
-**Priority:** P0  
+**Status:** DONE
+**Priority:** P0
 **Depends on:** T-040, T-090
 
 ### Description
@@ -682,6 +682,15 @@ Add a minimal "buyer agent" that behaves like an autonomous client:
 ### Acceptance Criteria
 - Running buyer agent demonstrates an "agentic commerce" flow end-to-end
 - Buyer agent refuses responses that fail invariants or schema (fail-closed)
+
+### Completion Notes
+- buyer_agent/client.py: BuyerAgent class — 402 flow, invariant verification, fail-closed
+- buyer_agent/main.py: CLI with --gateway-url, --buyer-address, --modes flags
+- 6 invariant checks: payout_le_max_price, refund_correctness, total_conservation, invalid_zero_payout, non-negative payout/refund
+- Raises InvariantViolation on bad receipts (fail-closed)
+- 9 tests (3 async mock flow + 6 invariant unit tests)
+- 77 total tests passing
+- Run: `python -m buyer_agent.main`
 
 ---
 
