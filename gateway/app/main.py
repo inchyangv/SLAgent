@@ -378,3 +378,49 @@ async def get_dispute(request_id: str) -> JSONResponse:
         "request_id": request_id,
         **_dispute_state[request_id],
     })
+
+
+# --- Multi-attestation endpoints (Buyer + Seller + Gateway) ---
+
+from gateway.app.attestation import attestation_store, verify_receipt_signature
+
+
+@app.post("/v1/receipts/{request_id}/attest")
+async def attest_receipt(request_id: str, request: Request) -> JSONResponse:
+    """Submit a signature attestation for a receipt.
+
+    Body: { "role": "buyer"|"seller"|"gateway", "signature": "0x...", "address": "0x..." }
+    """
+    receipt = receipt_store.get(request_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    body = await request.json()
+    role = body.get("role", "")
+    signature = body.get("signature", "")
+    address = body.get("address")
+
+    if role not in ("buyer", "seller", "gateway"):
+        raise HTTPException(status_code=400, detail="role must be buyer, seller, or gateway")
+    if not signature:
+        raise HTTPException(status_code=400, detail="signature is required")
+
+    receipt_hash = receipt.hashes.get("receipt_hash", "")
+    if not receipt_hash:
+        raise HTTPException(status_code=400, detail="Receipt has no hash")
+
+    result = attestation_store.add_attestation(
+        request_id=request_id,
+        receipt_hash=receipt_hash,
+        role=role,
+        signature=signature,
+        expected_address=address,
+    )
+
+    return JSONResponse(content=result)
+
+
+@app.get("/v1/receipts/{request_id}/attestations")
+async def get_attestations(request_id: str) -> JSONResponse:
+    """Get all attestations for a receipt."""
+    return JSONResponse(content=attestation_store.get_attestations(request_id))
