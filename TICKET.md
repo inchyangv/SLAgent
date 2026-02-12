@@ -62,7 +62,7 @@ Initialize repository structure and engineering standards so all subsequent tick
 ---
 
 ## T-001 — Choose Chain + Token Strategy (MVP)
-**Status:** TODO  
+**Status:** DONE
 **Priority:** P0  
 **Depends on:** T-000
 
@@ -81,6 +81,12 @@ Define how value moves in the demo: which network, which token, and how decimals
 
 ### Deliverables
 - docs update + optional token contract scaffold
+
+### Completion Notes
+- SKALE Europa Hub (chain 2046399126, zero gas fees)
+- ERC20 mock token (SLAT, 6 decimals) — matches USDC convention
+- Amount conventions documented in docs/ARCHITECTURE.md
+- Integer arithmetic rules: round down, payout <= max_price invariant
 
 ---
 
