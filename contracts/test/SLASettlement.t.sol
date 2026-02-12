@@ -15,7 +15,6 @@ contract SLASettlementTest is Test {
 
     address internal buyer = address(0xB0B);
     address internal seller = address(0x5E11);
-    address internal caller_ = address(0xCA11);
     address internal disputer = address(0xD15);
 
     bytes32 internal mandateId = keccak256("mandate-1");
@@ -34,11 +33,11 @@ contract SLASettlementTest is Test {
             address(token), gatewayAddr, resolverAddr, disputeWindowSec, bondAmount
         );
 
-        // Fund caller and disputer
-        token.mint(caller_, 10_000_000);
+        // Fund buyer and disputer
+        token.mint(buyer, 10_000_000);
         token.mint(disputer, 10_000_000);
 
-        vm.prank(caller_);
+        vm.prank(buyer);
         token.approve(address(settlement), type(uint256).max);
         vm.prank(disputer);
         token.approve(address(settlement), type(uint256).max);
@@ -61,13 +60,55 @@ contract SLASettlementTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    function _doSettle(
-        bytes32 _requestId,
-        uint256 _payout
-    ) internal {
+    function _doDeposit(bytes32 _requestId, uint256 _amount) internal {
+        vm.prank(buyer);
+        settlement.deposit(_requestId, buyer, _amount);
+    }
+
+    function _doSettle(bytes32 _requestId, uint256 _payout) internal {
+        _doDeposit(_requestId, maxPrice);
         bytes memory sig = _sign(mandateId, _requestId, buyer, seller, maxPrice, _payout, receiptHash);
-        vm.prank(caller_);
+        vm.prank(gatewayAddr);
         settlement.settle(mandateId, _requestId, buyer, seller, maxPrice, _payout, receiptHash, sig);
+    }
+
+    // ===================== DEPOSIT TESTS =====================
+
+    function test_deposit_success() public {
+        vm.prank(buyer);
+        settlement.deposit(requestId, buyer, maxPrice);
+
+        assertEq(token.balanceOf(address(settlement)), maxPrice);
+        assertEq(token.balanceOf(buyer), 10_000_000 - maxPrice);
+
+        (,,,,,,, SLASettlement.Status status) = settlement.settlements(requestId);
+        assertEq(uint256(status), uint256(SLASettlement.Status.DEPOSITED));
+    }
+
+    function test_deposit_emitsEvent() public {
+        vm.prank(buyer);
+        vm.expectEmit(true, true, false, true);
+        emit SLASettlement.Deposited(requestId, buyer, buyer, maxPrice);
+        settlement.deposit(requestId, buyer, maxPrice);
+    }
+
+    function test_deposit_zeroAddressReverts() public {
+        vm.prank(buyer);
+        vm.expectRevert(SLASettlement.ZeroAddress.selector);
+        settlement.deposit(requestId, address(0), maxPrice);
+    }
+
+    function test_deposit_zeroAmountReverts() public {
+        vm.prank(buyer);
+        vm.expectRevert(SLASettlement.ZeroAmount.selector);
+        settlement.deposit(requestId, buyer, 0);
+    }
+
+    function test_deposit_doubleReverts() public {
+        _doDeposit(requestId, maxPrice);
+        vm.prank(buyer);
+        vm.expectRevert(SLASettlement.AlreadyDeposited.selector);
+        settlement.deposit(requestId, buyer, maxPrice);
     }
 
     // ===================== SETTLEMENT TESTS =====================
@@ -83,32 +124,51 @@ contract SLASettlementTest is Test {
         assertEq(uint256(status), uint256(SLASettlement.Status.PENDING));
     }
 
+    function test_settle_withoutDepositReverts() public {
+        bytes memory sig = _sign(mandateId, requestId, buyer, seller, maxPrice, maxPrice, receiptHash);
+        vm.prank(gatewayAddr);
+        vm.expectRevert(SLASettlement.NotDeposited.selector);
+        settlement.settle(mandateId, requestId, buyer, seller, maxPrice, maxPrice, receiptHash, sig);
+    }
+
     function test_settle_replayReverts() public {
         _doSettle(requestId, maxPrice);
 
         bytes memory sig = _sign(mandateId, requestId, buyer, seller, maxPrice, maxPrice, receiptHash);
-        vm.prank(caller_);
+        vm.prank(gatewayAddr);
         vm.expectRevert(SLASettlement.AlreadySettled.selector);
         settlement.settle(mandateId, requestId, buyer, seller, maxPrice, maxPrice, receiptHash, sig);
     }
 
     function test_settle_payoutExceedsMax() public {
+        _doDeposit(requestId, maxPrice);
         uint256 badPayout = maxPrice + 1;
         bytes memory sig = _sign(mandateId, requestId, buyer, seller, maxPrice, badPayout, receiptHash);
 
-        vm.prank(caller_);
+        vm.prank(gatewayAddr);
         vm.expectRevert(SLASettlement.PayoutExceedsMax.selector);
         settlement.settle(mandateId, requestId, buyer, seller, maxPrice, badPayout, receiptHash, sig);
     }
 
     function test_settle_zeroAddress() public {
-        bytes memory sig = _sign(mandateId, requestId, address(0), seller, maxPrice, payout_, receiptHash);
-        vm.prank(caller_);
+        _doDeposit(requestId, maxPrice);
+        bytes memory sig = _sign(mandateId, requestId, buyer, address(0), maxPrice, payout_, receiptHash);
+        vm.prank(gatewayAddr);
         vm.expectRevert(SLASettlement.ZeroAddress.selector);
-        settlement.settle(mandateId, requestId, address(0), seller, maxPrice, payout_, receiptHash, sig);
+        settlement.settle(mandateId, requestId, buyer, address(0), maxPrice, payout_, receiptHash, sig);
+    }
+
+    function test_settle_buyerMismatch() public {
+        _doDeposit(requestId, maxPrice);
+        address wrongBuyer = address(0xBAD);
+        bytes memory sig = _sign(mandateId, requestId, wrongBuyer, seller, maxPrice, payout_, receiptHash);
+        vm.prank(gatewayAddr);
+        vm.expectRevert(SLASettlement.BuyerMismatch.selector);
+        settlement.settle(mandateId, requestId, wrongBuyer, seller, maxPrice, payout_, receiptHash, sig);
     }
 
     function test_settle_invalidSignature() public {
+        _doDeposit(requestId, maxPrice);
         uint256 wrongPk = 0xDEAD;
         bytes32 digest = keccak256(
             abi.encodePacked(mandateId, requestId, buyer, seller, maxPrice, payout_, receiptHash)
@@ -117,15 +177,16 @@ contract SLASettlementTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPk, ethSignedHash);
         bytes memory badSig = abi.encodePacked(r, s, v);
 
-        vm.prank(caller_);
+        vm.prank(gatewayAddr);
         vm.expectRevert(SLASettlement.InvalidSignature.selector);
         settlement.settle(mandateId, requestId, buyer, seller, maxPrice, payout_, receiptHash, badSig);
     }
 
     function test_settle_emitsEvent() public {
+        _doDeposit(requestId, maxPrice);
         bytes memory sig = _sign(mandateId, requestId, buyer, seller, maxPrice, payout_, receiptHash);
 
-        vm.prank(caller_);
+        vm.prank(gatewayAddr);
         vm.expectEmit(true, true, false, true);
         emit SLASettlement.Settled(mandateId, requestId, buyer, seller, payout_, 0, receiptHash);
         settlement.settle(mandateId, requestId, buyer, seller, maxPrice, payout_, receiptHash, sig);
@@ -142,7 +203,7 @@ contract SLASettlementTest is Test {
         settlement.finalize(requestId);
 
         assertEq(token.balanceOf(seller), 80_000);
-        assertEq(token.balanceOf(buyer), 20_000); // refund
+        assertEq(token.balanceOf(buyer), 10_000_000 - maxPrice + 20_000); // original - deposit + refund
         assertEq(token.balanceOf(address(settlement)), 0);
 
         (,,,,,,, SLASettlement.Status status) = settlement.settlements(requestId);
@@ -155,7 +216,7 @@ contract SLASettlementTest is Test {
         settlement.finalize(requestId);
 
         assertEq(token.balanceOf(seller), 0);
-        assertEq(token.balanceOf(buyer), maxPrice);
+        assertEq(token.balanceOf(buyer), 10_000_000); // full deposit returned
     }
 
     function test_finalize_beforeWindowReverts() public {
@@ -216,7 +277,7 @@ contract SLASettlementTest is Test {
         settlement.resolveDispute(requestId, 60_000);
 
         assertEq(token.balanceOf(seller), 60_000);
-        assertEq(token.balanceOf(buyer), 40_000); // refund
+        assertEq(token.balanceOf(buyer), 10_000_000 - maxPrice + 40_000); // refund
         assertEq(token.balanceOf(disputer), 10_000_000 - bondAmount + bondAmount); // bond returned
         assertEq(token.balanceOf(resolverAddr), 0); // bond NOT slashed
 
@@ -234,7 +295,7 @@ contract SLASettlementTest is Test {
         settlement.resolveDispute(requestId, 80_000);
 
         assertEq(token.balanceOf(seller), 80_000);
-        assertEq(token.balanceOf(buyer), 20_000);
+        assertEq(token.balanceOf(buyer), 10_000_000 - maxPrice + 20_000);
         assertEq(token.balanceOf(disputer), 10_000_000 - bondAmount); // bond slashed
         assertEq(token.balanceOf(resolverAddr), bondAmount); // resolver gets bond
     }

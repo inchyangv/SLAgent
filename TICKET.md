@@ -732,8 +732,8 @@ Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment aut
 ---
 
 ## T-123 — Fix On-chain Funds Flow (Buyer Pays, Not Gateway)
-**Status:** TODO
-**Priority:** P0  
+**Status:** DONE
+**Priority:** P0
 **Depends on:** T-010, T-050, T-122
 
 ### Description
@@ -751,6 +751,17 @@ Update the on-chain flow so **the buyer is the payer** (or the contract has escr
 ### Acceptance Criteria
 - On-chain accounting shows buyer funds `max_price` (not gateway custody)
 - Settlement distributes payout/refund from escrowed buyer funds
+
+### Completion Notes
+- Chose Option A: deposit(requestId, buyer, amount) → settle() distributes from escrow
+- New Status.DEPOSITED state: NONE → DEPOSITED → PENDING → DISPUTED/FINALIZED
+- deposit(): buyer (or facilitator on behalf) deposits max_price, recorded for accounting
+- settle(): checks deposit exists, buyer matches, amount sufficient — no more transferFrom
+- New errors: NotDeposited, InsufficientDeposit, BuyerMismatch, ZeroAmount, AlreadyDeposited
+- facilitator/settlement.py: added submit_deposit() method
+- 25 Foundry tests (5 deposit + 8 settle + 4 finalize + 3 dispute + 5 resolve)
+- 81 Python tests passing
+- Validate: `cd contracts && forge test -v`
 
 ---
 

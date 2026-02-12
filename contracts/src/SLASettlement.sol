@@ -8,14 +8,15 @@ import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /// @title SLASettlement — Settlement + Dispute contract for SLA-Pay v2
 /// @notice Escrowed settlement with delayed finalization and bonded disputes.
-///         Funds are held until dispute window passes or dispute is resolved.
+///         Buyer deposits funds via deposit(), gateway calls settle() to set terms,
+///         funds are held until dispute window passes or dispute is resolved.
 contract SLASettlement {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
     // --- Enums ---
-    enum Status { NONE, PENDING, DISPUTED, FINALIZED }
+    enum Status { NONE, DEPOSITED, PENDING, DISPUTED, FINALIZED }
 
     // --- Structs ---
     struct Settlement {
@@ -35,6 +36,13 @@ contract SLASettlement {
     }
 
     // --- Events ---
+    event Deposited(
+        bytes32 indexed requestId,
+        address indexed buyer,
+        address depositor,
+        uint256 amount
+    );
+
     event Settled(
         bytes32 indexed mandateId,
         bytes32 indexed requestId,
@@ -76,9 +84,14 @@ contract SLASettlement {
 
     // --- Errors ---
     error AlreadySettled();
+    error AlreadyDeposited();
     error PayoutExceedsMax();
     error ZeroAddress();
+    error ZeroAmount();
     error InvalidSignature();
+    error NotDeposited();
+    error InsufficientDeposit();
+    error BuyerMismatch();
     error NotPending();
     error NotDisputed();
     error DisputeWindowActive();
@@ -103,7 +116,41 @@ contract SLASettlement {
         bondAmount = _bondAmount;
     }
 
-    /// @notice Submit a settlement — funds escrowed in contract until finalized.
+    /// @notice Deposit funds for a request (buyer pays, not gateway).
+    ///         Can be called by the buyer directly, or by gateway/facilitator on behalf.
+    ///         msg.sender pays the tokens; `buyer` is recorded for accounting.
+    /// @param requestId Unique request identifier
+    /// @param buyer The buyer address (who the deposit is for)
+    /// @param amount Amount of tokens to deposit (must be >= maxPrice at settle time)
+    function deposit(
+        bytes32 requestId,
+        address buyer,
+        uint256 amount
+    ) external {
+        if (settlements[requestId].status != Status.NONE) revert AlreadyDeposited();
+        if (buyer == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+
+        // Record the deposit
+        settlements[requestId] = Settlement({
+            mandateId: bytes32(0),
+            buyer: buyer,
+            seller: address(0),
+            maxPrice: amount,
+            payout: 0,
+            receiptHash: bytes32(0),
+            finalizeAfter: 0,
+            status: Status.DEPOSITED
+        });
+
+        // Pull tokens from msg.sender (buyer or facilitator) into escrow
+        token.safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Deposited(requestId, buyer, msg.sender, amount);
+    }
+
+    /// @notice Submit a settlement — uses already-deposited funds.
+    ///         Only the gateway can call this (verified by signature).
     function settle(
         bytes32 mandateId,
         bytes32 requestId,
@@ -114,9 +161,15 @@ contract SLASettlement {
         bytes32 receiptHash,
         bytes calldata gatewaySig
     ) external {
-        if (settlements[requestId].status != Status.NONE) revert AlreadySettled();
+        Settlement storage s = settlements[requestId];
+
+        // Must have a prior deposit
+        if (s.status == Status.NONE) revert NotDeposited();
+        if (s.status != Status.DEPOSITED) revert AlreadySettled();
         if (payout > maxPrice) revert PayoutExceedsMax();
         if (buyer == address(0) || seller == address(0)) revert ZeroAddress();
+        if (s.buyer != buyer) revert BuyerMismatch();
+        if (s.maxPrice < maxPrice) revert InsufficientDeposit();
 
         // Verify gateway signature
         bytes32 digest = keccak256(
@@ -126,20 +179,21 @@ contract SLASettlement {
         address recovered = digest.recover(gatewaySig);
         if (recovered != gateway) revert InvalidSignature();
 
-        // Store settlement in escrow
-        settlements[requestId] = Settlement({
-            mandateId: mandateId,
-            buyer: buyer,
-            seller: seller,
-            maxPrice: maxPrice,
-            payout: payout,
-            receiptHash: receiptHash,
-            finalizeAfter: block.timestamp + disputeWindow,
-            status: Status.PENDING
-        });
+        // Update settlement with full terms
+        s.mandateId = mandateId;
+        s.seller = seller;
+        s.maxPrice = maxPrice;
+        s.payout = payout;
+        s.receiptHash = receiptHash;
+        s.finalizeAfter = block.timestamp + disputeWindow;
+        s.status = Status.PENDING;
 
-        // Pull maxPrice into escrow
-        token.safeTransferFrom(msg.sender, address(this), maxPrice);
+        // If deposit was larger than maxPrice, refund the excess immediately
+        uint256 deposited = s.maxPrice;
+        if (deposited > maxPrice) {
+            uint256 excess = deposited - maxPrice;
+            token.safeTransfer(buyer, excess);
+        }
 
         emit Settled(mandateId, requestId, buyer, seller, payout, maxPrice - payout, receiptHash);
     }

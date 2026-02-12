@@ -83,6 +83,49 @@ class SettlementClient:
         signed = Account.sign_message(encode_defunct(msg_hash), self.gateway_private_key)
         return signed.signature
 
+    def submit_deposit(
+        self,
+        *,
+        request_id_str: str,
+        request_id: bytes,
+        buyer: str,
+        amount: int,
+    ) -> str | None:
+        """Submit a deposit transaction on-chain (buyer funds escrow).
+
+        Returns tx hash hex string, or None if mocked/not configured.
+        """
+        if not self.contract or not self.w3 or not self.gateway_account:
+            logger.info(
+                f"Deposit mock: req={request_id_str} buyer={buyer} amount={amount} "
+                f"(no chain connection configured)"
+            )
+            return None
+
+        try:
+            tx = self.contract.functions.deposit(
+                request_id,
+                Web3.to_checksum_address(buyer),
+                amount,
+            ).build_transaction({
+                "chainId": int(self.w3.eth.chain_id),
+                "from": self.gateway_account.address,
+                "nonce": self.w3.eth.get_transaction_count(self.gateway_account.address),
+                "gas": 200_000,
+                "gasPrice": self.w3.eth.gas_price,
+            })
+
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.gateway_private_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            hex_hash = tx_hash.hex()
+
+            logger.info(f"Deposit tx submitted: {hex_hash}")
+            return hex_hash
+
+        except Exception as e:
+            logger.error(f"Deposit tx failed: {e}")
+            raise
+
     def submit_settlement(
         self,
         *,
