@@ -859,8 +859,8 @@ Current receipt store is in-memory. Persist receipts for demo reliability and "s
 ---
 
 ## T-127 — Partner Integration: Google A2A/AP2 Message Layer
-**Status:** TODO
-**Priority:** P1  
+**Status:** DONE
+**Priority:** P1
 **Depends on:** T-020
 
 ### Description
@@ -878,6 +878,14 @@ so the demo isn't only "custom REST JSON".
 ### Acceptance Criteria
 - At least one end-to-end call can run via the AP2/A2A envelope path
 - Docs show the message formats clearly
+
+### Completion Notes
+- gateway/app/a2a/envelope.py: A2A message envelope + 6 message constructors
+- gateway/app/a2a/routes.py: POST /a2a/message universal handler, GET /a2a/receipts/{id}
+- Message types: mandate.request/response, receipt.submission/ack, dispute.open/resolve
+- Envelope format: a2a_version, message_id, correlation_id, sender, receiver, timestamp, payload
+- 10 new tests (7 envelope unit + 3 endpoint), 91 total passing
+- Validate: `pytest gateway/tests/test_a2a.py -v`
 
 ---
 

@@ -28,6 +28,10 @@ logger = logging.getLogger("sla-gateway")
 
 app = FastAPI(title="SLA-Pay v2 Gateway", version="0.1.0")
 
+# A2A/AP2 protocol routes
+from gateway.app.a2a.routes import router as a2a_router
+app.include_router(a2a_router)
+
 # Default mandate for demo (matches PROJECT.md)
 DEFAULT_MANDATE = {
     "max_price": "100000",
