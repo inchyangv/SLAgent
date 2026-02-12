@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check gateway/
+      - name: Type check (mypy)
+        run: mypy gateway/app/ --ignore-missing-imports
+      - name: Test (pytest)
+        run: pytest gateway/tests/ -v
+
+  solidity-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Forge build
+        working-directory: contracts
+        run: forge build
+      - name: Forge test
+        working-directory: contracts
+        run: forge test -v
