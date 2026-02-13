@@ -8,6 +8,7 @@ Message Types:
 - MandateRequest / MandateResponse
 - ReceiptSubmission / ReceiptAck
 - DisputeOpen / DisputeResolve
+- IntentCreate / IntentAuthorize / SettlementExecute / ReceiptIssue (AP2 pattern)
 
 This implements a minimal A2A-compatible message framing so that
 SLAgent-402 mandates and receipts can be exchanged as structured protocol messages
@@ -167,4 +168,109 @@ def dispute_resolve_msg(
         receiver=receiver,
         correlation_id=correlation_id,
         payload={"request_id": request_id, "final_payout": final_payout},
+    )
+
+
+# ── AP2 Intent → Authorization → Settlement → Receipt ─────────────────────
+
+
+def intent_create(
+    *,
+    sender: str,
+    receiver: str,
+    intent_id: str,
+    mandate_id: str,
+    buyer: str,
+    seller: str,
+    max_price: str,
+) -> dict[str, Any]:
+    """Create an IntentCreate message (buyer → gateway)."""
+    return create_envelope(
+        message_type="slagent-402.intent.create",
+        sender=sender,
+        receiver=receiver,
+        payload={
+            "intent_id": intent_id,
+            "mandate_id": mandate_id,
+            "buyer": buyer,
+            "seller": seller,
+            "max_price": max_price,
+        },
+    )
+
+
+def intent_authorize(
+    *,
+    sender: str,
+    receiver: str,
+    correlation_id: str,
+    intent_id: str,
+    authorization_id: str,
+    authorizer: str,
+    policy_id: str = "",
+    expires_at: str = "",
+) -> dict[str, Any]:
+    """Create an IntentAuthorize message (authorizer → gateway)."""
+    return create_envelope(
+        message_type="slagent-402.intent.authorize",
+        sender=sender,
+        receiver=receiver,
+        correlation_id=correlation_id,
+        payload={
+            "intent_id": intent_id,
+            "authorization_id": authorization_id,
+            "authorizer": authorizer,
+            "policy_id": policy_id,
+            "expires_at": expires_at,
+        },
+    )
+
+
+def settlement_execute(
+    *,
+    sender: str,
+    receiver: str,
+    correlation_id: str,
+    settlement_id: str,
+    intent_id: str,
+    authorization_id: str,
+) -> dict[str, Any]:
+    """Create a SettlementExecute message (gateway → contract)."""
+    return create_envelope(
+        message_type="slagent-402.settlement.execute",
+        sender=sender,
+        receiver=receiver,
+        correlation_id=correlation_id,
+        payload={
+            "settlement_id": settlement_id,
+            "intent_id": intent_id,
+            "authorization_id": authorization_id,
+        },
+    )
+
+
+def receipt_issue(
+    *,
+    sender: str,
+    receiver: str,
+    correlation_id: str,
+    receipt_id: str,
+    request_id: str,
+    authorized_by: str,
+    authorized_at: str,
+    policy_id: str = "",
+) -> dict[str, Any]:
+    """Create a ReceiptIssue message (gateway → buyer)."""
+    return create_envelope(
+        message_type="slagent-402.receipt.issue",
+        sender=sender,
+        receiver=receiver,
+        correlation_id=correlation_id,
+        payload={
+            "receipt_id": receipt_id,
+            "request_id": request_id,
+            "authorized_by": authorized_by,
+            "authorized_at": authorized_at,
+            "policy_id": policy_id,
+        },
     )

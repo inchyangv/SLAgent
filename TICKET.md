@@ -1447,7 +1447,7 @@ Meet the x402 track with an explicit multi-step paid tool chain.
 ---
 
 ## T-147 — AP2 Intent → Authorization → Settlement Pattern (Audit-ready)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-127, T-129, T-050, T-138
 
@@ -1474,6 +1474,16 @@ All steps use A2A/AP2 envelopes and leave audit-ready records.
 - Full intent → authorization → settlement → receipt succeeds via AP2 envelopes
 - One authorization failure path is demoed and logged
 - Receipt/ledger shows authorizer, timestamp, and policy clearly
+
+### Completion Notes
+- gateway/app/a2a/authorization.py: Intent + Authorization store with state machine (CREATED→AUTHORIZED→SETTLED→RECEIPT_ISSUED, REJECTED, EXPIRED)
+- gateway/app/a2a/envelope.py: +4 AP2 message constructors (intent_create, intent_authorize, settlement_execute, receipt_issue)
+- gateway/app/a2a/routes.py: +5 AP2 handlers with settlement gate (403 if no valid auth), intent reject, REST query endpoints
+- docs/AP2_FLOW.md: full documentation with flow diagram, state machine, JSON examples, failure path
+- 18 new tests (4 envelope, 7 auth store unit, 7 integration incl. full flow, blocked, expired, reject)
+- Event ledger records: authorization.intent_created, .granted, .rejected, .settlement_blocked, .settlement_executed, .receipt_issued
+- 247 total tests passing
+- Validate: `pytest gateway/tests/test_a2a.py -v`
 
 ---
 
