@@ -71,7 +71,7 @@ Fill at least:
 - `GEMINI_API_KEY`
 - `PRIVATE_KEY` (contract deploy)
 - `GATEWAY_PRIVATE_KEY` (on-chain signer)
-- `SETTLEMENT_CONTRACT_ADDRESS` (after deploy)
+- `SETTLEMENT_CONTRACT_ADDRESS=0xd5FBcF82364865E2477Aae988A3C3232Fae77756`
 
 2) Deploy contracts (Foundry)
 ```bash
@@ -104,4 +104,3 @@ uvicorn gateway.app.main:app --port 8000
 ## Current Limitation
 
 - For demo simplicity, the current `deposit()` payer is the **Gateway EOA**, so `GATEWAY_PRIVATE_KEY` must hold USDC + sFUEL.
-
