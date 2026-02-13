@@ -169,6 +169,9 @@ async def call_endpoint(request: Request) -> JSONResponse:
                 ),
                 request_body=body,
                 response_body=b"",
+                t_request_received=rm.t_request_received,
+                t_first_token=rm.t_first_token,
+                t_response_done=rm.t_response_done,
             )
             receipt_store.save(receipt)
             raise HTTPException(
@@ -220,6 +223,9 @@ async def call_endpoint(request: Request) -> JSONResponse:
         pricing=pricing,
         request_body=body,
         response_body=seller_body,
+        t_request_received=rm.t_request_received,
+        t_first_token=rm.t_first_token,
+        t_response_done=rm.t_response_done,
     )
 
     # Submit settlement on-chain

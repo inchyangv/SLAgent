@@ -296,9 +296,27 @@ def build_receipt(
     pricing: PricingResult,
     request_body: bytes,
     response_body: bytes,
+    t_request_received: float = 0.0,
+    t_first_token: float = 0.0,
+    t_response_done: float = 0.0,
 ) -> Receipt:
-    """Assemble a receipt with computed hashes."""
+    """Assemble a receipt with computed hashes and accurate timestamps.
+
+    Timestamps are epoch floats from RequestMetrics. If not provided, uses now().
+    TTFT is defined as "time to first response byte from seller" (non-streaming).
+    """
     now = datetime.now(timezone.utc)
+
+    def _ts(epoch: float) -> str:
+        if epoch > 0:
+            return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+        return now.isoformat()
+
+    timestamps = {
+        "t_request_received": _ts(t_request_received),
+        "t_first_token": _ts(t_first_token),
+        "t_response_done": _ts(t_response_done),
+    }
 
     receipt = Receipt(
         version="1.0",
@@ -307,10 +325,7 @@ def build_receipt(
         buyer=buyer,
         seller=seller,
         gateway=gateway_addr,
-        timestamps={
-            "t_request_received": now.isoformat(),
-            "t_response_done": now.isoformat(),
-        },
+        timestamps=timestamps,
         metrics=metrics,
         outcome=outcome,
         validation=validation,

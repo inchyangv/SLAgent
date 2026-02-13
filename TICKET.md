@@ -994,7 +994,7 @@ buyer→gateway→seller에서 “요청 파라미터(모드/입력/타임아웃
 ---
 
 ## T-131 — Receipt Timing Accuracy (TTFT + timestamps)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **Depends on:** T-030
 
@@ -1010,10 +1010,18 @@ buyer→gateway→seller에서 “요청 파라미터(모드/입력/타임아웃
 ### Acceptance Criteria
 - receipt metrics가 일관되고 방어 가능한 의미를 가진다
 
+### Completion Notes
+- gateway/app/receipt.py: build_receipt에 t_request_received/t_first_token/t_response_done 파라미터 추가
+- receipt timestamps가 RequestMetrics의 실제 epoch 값을 사용
+- TTFT 정의: "time to first response byte from seller" (non-streaming)
+- gateway/app/main.py: 두 build_receipt 호출에 실제 타임스탬프 전달
+- 155 total tests passed
+- Validate: `pytest gateway/tests/ -v`
+
 ---
 
 ## T-132 — Align Contract Interface vs Gateway ABI (deposit() mismatch)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-010, T-050, T-123
 
@@ -1029,6 +1037,12 @@ buyer-pays 모델(T-123)을 구현하려면 ABI/컨트랙트가 정확히 일치
 
 ### Acceptance Criteria
 - 데모 네트워크에서 ABI mismatch로 트랜잭션이 깨지지 않는다
+
+### Completion Notes
+- T-123에서 해결됨: contract와 gateway ABI가 deposit/settle/openDispute/resolveDispute/finalize 모두 일치
+- Contract: deposit(bytes32,address,uint256), settle(bytes32,bytes32,address,address,uint256,uint256,bytes32,bytes)
+- Gateway ABI: 동일한 시그니처
+- Validate: `cd contracts && forge test -v`
 
 ---
 
