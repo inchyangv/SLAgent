@@ -5,3 +5,5 @@
 - 최신 데모 가이드: `DEMO.md` (레포 루트)
 - 로컬 실행: `LOCAL.md` (레포 루트)
 - 역할 정의/트러스트 바운더리: `docs/ARCHITECTURE.md` → "Agent Roles & Trust Boundaries"
+
+트랙 데모(구현됨) 요약은 레포 루트 `DEMO.md` 하단을 참고하세요.

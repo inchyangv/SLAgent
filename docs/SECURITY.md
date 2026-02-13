@@ -93,6 +93,11 @@ Gateway has no rate limiting, making it vulnerable to DoS.
 
 **Future fix:** Rate limiting per buyer address.
 
+### 6. Encrypted Conditional Settlement (BITE v2)
+Sensitive conditions/pricing/policy are encrypted and only decrypted when
+SLA and policy checks pass. Failed conditions keep data sealed and block
+settlement.
+
 ## What Cannot Be Cheated (Even in MVP)
 
 1. **Payout invariant:** `payout <= max_price` is enforced on-chain
@@ -109,3 +114,4 @@ Gateway has no rate limiting, making it vulnerable to DoS.
 4. Add receipt storage with content-addressable hashing (IPFS)
 5. Implement rate limiting and access controls
 6. Conduct formal smart contract audit
+7. Expand encrypted policy coverage and formalize decryption attestations

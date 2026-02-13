@@ -158,6 +158,14 @@ Buyer Agent          Gateway              Seller Agent         Settlement Contra
 
 ---
 
+## Track Add-ons (Implemented)
+
+- **x402 Agentic Tool Chain**: 2+ paid tool calls per workflow (402 → pay → retry), CDP Wallet signing/custody, budget-aware tool choice with spend logs.
+- **AP2 Pattern**: explicit intent → authorization → settlement → receipt over A2A/AP2 envelopes with audit-ready records and failure modes.
+- **BITE v2 Conditional Settlement**: encrypted conditions/pricing/policy, decrypted only when SLA passes; failure path keeps data sealed.
+
+---
+
 ## Chain & Token Strategy (MVP)
 
 ### Network: SKALE Base Sepolia (BITE v2 Sandbox 2)

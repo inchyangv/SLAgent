@@ -1,5 +1,13 @@
 # API — SLA Mandate & Receipt Schemas
 
+## Track Add-ons (Implemented)
+
+- **Agentic Tool Usage on x402**: 2+ paid tool calls per workflow (402 → pay → retry each), CDP Wallet signing/custody, budget-aware tool choice with spend logs.
+- **Best Integration of AP2**: explicit intent → authorization → settlement → receipt pattern over A2A/AP2 envelopes, including an authorization failure mode demo.
+- **Encrypted Agents (BITE v2)**: encrypted conditions/pricing/policy, decrypted and settled only on success; failure path keeps data sealed.
+
+---
+
 ## 1. SLA Mandate Schema
 
 ```json

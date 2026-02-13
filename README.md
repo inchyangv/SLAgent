@@ -118,6 +118,21 @@ data/              Local SQLite receipts (optional)
 - **Storage is best-effort** — receipts are in-memory unless `RECEIPT_DB_PATH` is set
 - **LLM policy is advisory** and constrained by deterministic guardrails
 
+## Track Add-ons (Implemented)
+
+- **Agentic Tool Usage on x402**
+  - 2+ paid tool calls in one workflow (each 402 → pay → retry)
+  - CDP Wallet used for signing/custody
+  - Budget-aware tool choice with spend logs and summaries
+- **Best Integration of AP2**
+  - Explicit intent → authorization → settlement → receipt pattern
+  - A2A/AP2 envelope-only flow with audit-ready receipts
+  - Failure mode demo (authorization rejected/expired)
+- **Encrypted Agents (BITE v2)**
+  - Encrypted conditions/pricing/policy unlocked only on success
+  - Conditional decrypt → settlement → receipt
+  - Failure path shows no decrypt and no settlement
+
 ## License
 
 MIT
