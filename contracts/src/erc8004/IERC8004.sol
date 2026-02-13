@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 /// @title IERC8004Identity — Minimal Identity Registry interface (ERC-8004)
 /// @notice Each agent gets an on-chain ID (NFT-based in the full spec).
-///         We define the subset needed for SLA-Pay orchestration.
+///         We define the subset needed for SLAgent-402 orchestration.
 interface IERC8004Identity {
     event Registered(uint256 indexed agentId, string agentURI, address indexed owner);
 

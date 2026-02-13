@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import "./IERC8004.sol";
 import "../SLASettlement.sol";
 
-/// @title SLAOrchestrator — ERC-8004 adapter for SLA-Pay settlement lifecycle
-/// @notice Maps SLA-Pay operations (settle, finalize, dispute) to ERC-8004
+/// @title SLAOrchestrator — ERC-8004 adapter for SLAgent-402 settlement lifecycle
+/// @notice Maps SLAgent-402 operations (settle, finalize, dispute) to ERC-8004
 ///         registry hooks: Identity (agent registration), Validation (receipt
 ///         verification), and Reputation (post-settlement feedback).
 ///
@@ -20,7 +20,7 @@ contract SLAOrchestrator {
     IERC8004Reputation public immutable reputation;
     IERC8004Validation public immutable validation;
 
-    // --- SLA-Pay Settlement ---
+    // --- SLAgent-402 Settlement ---
     SLASettlement public immutable settlement;
 
     // --- State ---

@@ -55,7 +55,7 @@ contract SLASettlementTest is Test {
         bytes32 digest = keccak256(
             abi.encodePacked(_mandateId, _requestId, _buyer, _seller, _maxPrice, _payout, _receiptHash)
         );
-        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(digest);
+        bytes32 ethSignedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", digest));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(gatewayPk, ethSignedHash);
         return abi.encodePacked(r, s, v);
     }
@@ -173,7 +173,7 @@ contract SLASettlementTest is Test {
         bytes32 digest = keccak256(
             abi.encodePacked(mandateId, requestId, buyer, seller, maxPrice, payout_, receiptHash)
         );
-        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(digest);
+        bytes32 ethSignedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", digest));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPk, ethSignedHash);
         bytes memory badSig = abi.encodePacked(r, s, v);
 

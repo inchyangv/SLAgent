@@ -4,16 +4,14 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-/// @title SLASettlement — Settlement + Dispute contract for SLA-Pay v2
+/// @title SLASettlement — Settlement + Dispute contract for SLAgent-402
 /// @notice Escrowed settlement with delayed finalization and bonded disputes.
 ///         Buyer deposits funds via deposit(), gateway calls settle() to set terms,
 ///         funds are held until dispute window passes or dispute is resolved.
 contract SLASettlement {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
-    using MessageHashUtils for bytes32;
 
     // --- Enums ---
     enum Status { NONE, DEPOSITED, PENDING, DISPUTED, FINALIZED }
@@ -116,6 +114,17 @@ contract SLASettlement {
         bondAmount = _bondAmount;
     }
 
+    /// @dev Minimal ERC-191 "eth_sign" prefix for bytes32 hashes.
+    ///      Avoids OpenZeppelin MessageHashUtils -> Strings -> Bytes (mcopy) dependency,
+    ///      so the contract can compile for Istanbul-class EVMs (ex: SKALE hackathon chain).
+    function _toEthSignedMessageHash(bytes32 messageHash) internal pure returns (bytes32 digest) {
+        assembly ("memory-safe") {
+            mstore(0x00, "\x19Ethereum Signed Message:\n32")
+            mstore(0x1c, messageHash)
+            digest := keccak256(0x00, 0x3c)
+        }
+    }
+
     /// @notice Deposit funds for a request (buyer pays, not gateway).
     ///         Can be called by the buyer directly, or by gateway/facilitator on behalf.
     ///         msg.sender pays the tokens; `buyer` is recorded for accounting.
@@ -172,9 +181,9 @@ contract SLASettlement {
         if (s.maxPrice < maxPrice) revert InsufficientDeposit();
 
         // Verify gateway signature
-        bytes32 digest = keccak256(
+        bytes32 digest = _toEthSignedMessageHash(keccak256(
             abi.encodePacked(mandateId, requestId, buyer, seller, maxPrice, payout, receiptHash)
-        ).toEthSignedMessageHash();
+        ));
 
         address recovered = digest.recover(gatewaySig);
         if (recovered != gateway) revert InvalidSignature();

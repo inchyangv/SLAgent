@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/SLAToken.sol";
 import "../src/SLASettlement.sol";
 
-/// @notice Deploy SLAToken + SLASettlement for demo networks (ex: SKALE testnet).
+/// @notice Deploy SLAToken + SLASettlement for demo networks (ex: SKALE Base Sepolia (BITE v2 Sandbox 2)).
 /// Recommended: use one EOA as deployer+gateway+resolver for the demo.
 contract DeploySlaPayV2 is Script {
     function run() external {
@@ -27,7 +27,7 @@ contract DeploySlaPayV2 is Script {
         uint256 mintToGateway = vm.envOr("MINT_TO_GATEWAY", uint256(1_000_000_000)); // 1000 SLAT (6 decimals)
         bool approveMax = vm.envOr("APPROVE_MAX", true);
 
-        // Optional: use an existing token (ex: predeployed USDC on SKALE hackathon chain)
+        // Optional: use an existing token (ex: USDC on SKALE Base Sepolia (BITE v2 Sandbox 2))
         // instead of deploying SLAToken.
         address existingToken = _envAddressOr("TOKEN_ADDRESS", address(0));
 
