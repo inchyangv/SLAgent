@@ -62,6 +62,8 @@ async def evaluate_sla_with_gemini(
     success: bool,
     schema_validation_pass: bool,
     latency_ms: int,
+    mode: str = "",
+    scenario_tag: str = "",
 ) -> dict[str, Any] | None:
     """Ask Gemini to evaluate SLA quality and suggest payout.
 
@@ -73,11 +75,14 @@ async def evaluate_sla_with_gemini(
     max_price = int(mandate.get("max_price", "0") or 0)
     base_pay = int(mandate.get("base_pay", "0") or 0)
 
+    scenario = (scenario_tag or "").strip().lower()
     prompt = f"""\
 You are an SLA adjudicator for autonomous AI-to-AI payments.
 Given the request result, decide whether SLA passed and suggest payout.
 
 Input:
+- scenario_profile: "{scenario or 'auto'}"  # expected one of happy / slow / breaches / auto
+- call_mode: "{mode or 'unknown'}"
 - max_price: {max_price}
 - base_pay: {base_pay}
 - success: {str(success).lower()}
@@ -118,6 +123,25 @@ Output ONLY JSON:
         breach_reasons = []
     breach_reasons = [str(x) for x in breach_reasons[:5]]
 
+    # Scenario guardrails for deterministic demo behavior:
+    # - happy: bias full payout when basic checks pass
+    # - slow: enforce degraded but non-zero payout when basic checks pass
+    # - breaches: enforce hard fail + zero payout
+    if scenario == "breaches":
+        sla_pass = False
+        payout = 0
+        if "BREACH_SCENARIO_BREACHES" not in breach_reasons:
+            breach_reasons.append("BREACH_SCENARIO_BREACHES")
+    elif scenario == "happy" and success and schema_validation_pass:
+        sla_pass = True
+        payout = max_price if payout is None else _clamp_int(max(payout, max_price), 0, max_price)
+    elif scenario == "slow" and success and schema_validation_pass:
+        floor = max(0, min(base_pay, max_price))
+        ceil = max(floor, max_price - 1)
+        if payout is None:
+            payout = ceil
+        payout = _clamp_int(payout, floor, ceil)
+
     return {
         "mode": "llm",
         "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
@@ -133,6 +157,7 @@ async def suggest_mandate_with_gemini(
     *,
     mandate: dict[str, Any],
     seller_capabilities: dict[str, Any] | None = None,
+    scenario_tag: str = "",
 ) -> dict[str, Any] | None:
     """Ask Gemini for SLA/price negotiation suggestions.
 
@@ -145,11 +170,13 @@ async def suggest_mandate_with_gemini(
     base_pay = int(mandate.get("base_pay", "0") or 0)
     tiers = mandate.get("bonus_rules", {}).get("tiers", [])
 
+    scenario = (scenario_tag or "").strip().lower()
     prompt = f"""\
 You are negotiating SLA terms between buyer and seller agent.
 Suggest practical pricing terms that preserve buyer safety.
 
 Input:
+- scenario_profile: "{scenario or 'auto'}"  # expected one of happy / slow / breaches / auto
 - mandate: {json.dumps(mandate, ensure_ascii=True)}
 - seller_capabilities: {json.dumps(seller_capabilities or {{}}, ensure_ascii=True)}
 
@@ -181,6 +208,17 @@ Output ONLY JSON:
     suggested_max = max(0, suggested_max)
     suggested_base = _clamp_int(suggested_base, 0, suggested_max if suggested_max > 0 else suggested_base)
 
+    # Scenario-specific negotiation posture.
+    if scenario == "breaches":
+        # Tighten terms: lower base pay and stricter timeout-oriented tiers.
+        suggested_base = _clamp_int(int(suggested_base * 0.6), 0, suggested_max)
+    elif scenario == "slow":
+        # Keep base pay but avoid full payout as default.
+        suggested_base = _clamp_int(int(max(suggested_base, int(0.7 * suggested_max))), 0, suggested_max)
+    elif scenario == "happy":
+        # Favor full value collaboration posture.
+        suggested_base = _clamp_int(int(max(suggested_base, suggested_max)), 0, suggested_max)
+
     norm_tiers: list[dict[str, str]] = []
     for t in counter.get("tiers", tiers):
         if not isinstance(t, dict):
@@ -197,6 +235,25 @@ Output ONLY JSON:
     if not norm_tiers:
         norm_tiers = [{"lte_ms": 999999999, "payout": str(suggested_base)}]
 
+    if scenario == "happy":
+        norm_tiers = [
+            {"lte_ms": 2000, "payout": str(suggested_max)},
+            {"lte_ms": 5000, "payout": str(max(suggested_base, int(0.9 * suggested_max)))},
+            {"lte_ms": 999999999, "payout": str(max(suggested_base, int(0.8 * suggested_max)))},
+        ]
+    elif scenario == "slow":
+        norm_tiers = [
+            {"lte_ms": 2000, "payout": str(max(suggested_base, int(0.9 * suggested_max)))},
+            {"lte_ms": 5000, "payout": str(max(suggested_base, int(0.8 * suggested_max)))},
+            {"lte_ms": 999999999, "payout": str(max(suggested_base, int(0.7 * suggested_max)))},
+        ]
+    elif scenario == "breaches":
+        norm_tiers = [
+            {"lte_ms": 2000, "payout": str(max(0, int(0.7 * suggested_max)))},
+            {"lte_ms": 5000, "payout": str(max(0, int(0.5 * suggested_max)))},
+            {"lte_ms": 999999999, "payout": str(max(0, int(0.3 * suggested_max)))},
+        ]
+
     return {
         "mode": "llm",
         "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
@@ -211,4 +268,3 @@ Output ONLY JSON:
             },
         },
     }
-

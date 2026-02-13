@@ -495,6 +495,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     modes: [mode],
+                    scenario: sim.preset,
                     seller_url: sl(),
                     delay_ms: sim.delay_ms,
                     simulator: sim,

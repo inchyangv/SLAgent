@@ -272,10 +272,14 @@ async def suggest_negotiation_terms(request: Request) -> JSONResponse:
     if not isinstance(mandate, dict):
         raise HTTPException(status_code=400, detail="mandate must be a JSON object")
     seller_caps = body.get("seller_capabilities", {}) if isinstance(body, dict) else {}
+    scenario_tag = ""
+    if isinstance(body, dict):
+        scenario_tag = str(body.get("scenario", "") or body.get("scenario_tag", "")).strip().lower()
 
     suggestion = await suggest_mandate_with_gemini(
         mandate=mandate,
         seller_capabilities=seller_caps if isinstance(seller_caps, dict) else {},
+        scenario_tag=scenario_tag,
     )
     if not suggestion:
         return JSONResponse(content={"mode": "disabled", "suggestion": None})
@@ -355,6 +359,14 @@ async def call_endpoint(request: Request) -> JSONResponse:
     # Extract mode and delay_ms from query or body (default: fast, 0)
     mode = request.query_params.get("mode") or payload.get("mode", "fast")
     delay_ms = request.query_params.get("delay_ms") or payload.get("delay_ms", 0)
+    scenario_tag = str(payload.get("scenario_tag", "") or payload.get("scenario", "")).strip().lower()
+    if not scenario_tag:
+        if mode in ("invalid", "error", "timeout"):
+            scenario_tag = "breaches"
+        elif mode == "slow" or int(delay_ms) >= 3000:
+            scenario_tag = "slow"
+        else:
+            scenario_tag = "happy"
 
     # Forward to seller with mode + delay_ms as query param + body
     seller_payload = {**payload, "mode": mode, "delay_ms": int(delay_ms)}
@@ -448,6 +460,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
         success=success,
         schema_validation_pass=overall_pass,
         latency_ms=metrics.latency_ms,
+        mode=mode,
+        scenario_tag=scenario_tag,
     )
     if llm_policy:
         llm_sla_pass = llm_policy.get("sla_pass")
@@ -498,11 +512,13 @@ async def call_endpoint(request: Request) -> JSONResponse:
                 "recommended_payout": llm_policy.get("recommended_payout"),
                 "confidence": llm_policy.get("confidence"),
                 "reason": llm_policy.get("reason"),
+                "scenario_tag": scenario_tag,
             },
         )
 
     breach_reasons = list(pricing_decision.breach_reasons)
     outcome["llm_policy"] = llm_policy or {"mode": "disabled"}
+    outcome["llm_policy_scenario"] = scenario_tag
     pricing = PricingResult(
         max_price=str(pricing_decision.max_price),
         computed_payout=str(pricing_decision.payout),
@@ -678,6 +694,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "instant_payout_mode": instant_payout_mode,
             "breach_reasons": breach_reasons,
             "llm_policy": llm_policy,
+            "scenario_tag": scenario_tag,
         }
     )
 
@@ -984,6 +1001,7 @@ async def demo_run(request: Request) -> JSONResponse:
     seller_url = body.get("seller_url", settings.seller_upstream_url)
     sim_delay_ms = int(body.get("delay_ms", 0))
     simulator = body.get("simulator", {})
+    scenario_tag = str(body.get("scenario", "") or simulator.get("preset", "")).strip().lower()
     negotiate_raw = body.get("negotiate", True)
     negotiate = negotiate_raw if isinstance(negotiate_raw, bool) else str(negotiate_raw).lower() not in ("0", "false", "no")
 
@@ -1017,7 +1035,7 @@ async def demo_run(request: Request) -> JSONResponse:
     # Step 1: Negotiate (optional for autonomous tick mode)
     if negotiate:
         try:
-            neg = await agent.negotiate_mandate()
+            neg = await agent.negotiate_mandate(scenario_tag=(scenario_tag or "happy"))
             steps.append({
                 "step": "negotiate",
                 "ok": True,
@@ -1034,7 +1052,7 @@ async def demo_run(request: Request) -> JSONResponse:
     results: list[dict] = []
     for mode in modes:
         try:
-            result = await agent.call(mode=mode, delay_ms=sim_delay_ms)
+            result = await agent.call(mode=mode, delay_ms=sim_delay_ms, scenario_tag=(scenario_tag or mode))
             attest = result.attestation_status.get("status", {})
             results.append({
                 "mode": mode,
@@ -1051,6 +1069,7 @@ async def demo_run(request: Request) -> JSONResponse:
                 "llm_policy": result.llm_policy,
                 "latency_ms": result.metrics.get("latency_ms"),
                 "delay_ms_applied": sim_delay_ms,
+                "scenario_tag": scenario_tag or mode,
                 "attestations": {
                     "count": attest.get("count", 0),
                     "complete": attest.get("complete", False),

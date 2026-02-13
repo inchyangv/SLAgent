@@ -119,6 +119,7 @@ class BuyerAgent:
     async def negotiate_mandate(
         self,
         seller_capabilities: dict[str, Any] | None = None,
+        scenario_tag: str = "",
     ) -> NegotiationResult:
         """Negotiate a mandate: build from template, submit to seller for acceptance.
 
@@ -146,7 +147,11 @@ class BuyerAgent:
                 async with httpx.AsyncClient(timeout=3.0) as client:
                     sugg = await client.post(
                         f"{self.gateway_url}/v1/negotiation/suggest",
-                        json={"mandate": mandate, "seller_capabilities": seller_capabilities},
+                        json={
+                            "mandate": mandate,
+                            "seller_capabilities": seller_capabilities,
+                            "scenario_tag": scenario_tag,
+                        },
                     )
                 if sugg.status_code == 200:
                     data = sugg.json()
@@ -326,7 +331,12 @@ class BuyerAgent:
             raise RuntimeError(f"buyer deposit tx failed: {tx_hash.hex()}")
         return tx_hash.hex()
 
-    async def call(self, mode: str = "fast", delay_ms: int = 0) -> BuyerResult:
+    async def call(
+        self,
+        mode: str = "fast",
+        delay_ms: int = 0,
+        scenario_tag: str = "",
+    ) -> BuyerResult:
         """Execute the full buyer flow: 402 challenge → paid request → verify.
 
         Args:
@@ -344,6 +354,8 @@ class BuyerAgent:
         call_body: dict = {"mode": mode, "request_id": request_id_hint}
         if delay_ms > 0:
             call_body["delay_ms"] = delay_ms
+        if scenario_tag:
+            call_body["scenario_tag"] = scenario_tag
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             # Step 1: Unpaid request → expect 402
