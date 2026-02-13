@@ -1,16 +1,18 @@
 """Tests for gateway settlement_client (deposit + settle wrappers)."""
 
 import pytest
-from unittest.mock import patch, MagicMock
 
-from gateway.app.settlement_client import submit_deposit, settle_request, get_settlement_client
+from gateway.app.settlement_client import settle_request, submit_deposit
 
 
 @pytest.fixture(autouse=True)
-def reset_client():
+def reset_client(monkeypatch):
     """Reset singleton settlement client between tests."""
     import gateway.app.settlement_client as sc
     sc._client = None
+    monkeypatch.setattr(sc.settings, "chain_rpc_url", "")
+    monkeypatch.setattr(sc.settings, "settlement_contract", "")
+    monkeypatch.setattr(sc.settings, "gateway_private_key", "")
     yield
     sc._client = None
 
@@ -27,13 +29,12 @@ def test_submit_deposit_mock_mode():
 
 
 def test_submit_deposit_with_invalid_buyer():
-    """submit_deposit normalizes invalid buyer to zero-address."""
+    """submit_deposit skips invalid buyer without raising."""
     result = submit_deposit(
         request_id="req_test_002",
         buyer="not-an-address",
         amount=100_000,
     )
-    # Should not crash, just warn and use zero-address
     assert result["mode"] == "mock"
 
 

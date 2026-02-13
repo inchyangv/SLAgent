@@ -32,11 +32,23 @@ def extract_json(raw: str) -> dict[str, Any]:
     """
     text = raw.strip()
 
+    def _coerce_obj(value: Any) -> dict[str, Any] | None:
+        """Normalize model output into a JSON object.
+
+        Some LLM responses wrap the object in a single-element array.
+        """
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            return value[0]
+        return None
+
     # 1) Direct parse
     try:
         obj = json.loads(text)
-        if isinstance(obj, dict):
-            return obj
+        coerced = _coerce_obj(obj)
+        if coerced is not None:
+            return coerced
     except json.JSONDecodeError:
         pass
 
@@ -45,8 +57,9 @@ def extract_json(raw: str) -> dict[str, Any]:
     if match:
         try:
             obj = json.loads(match.group(1).strip())
-            if isinstance(obj, dict):
-                return obj
+            coerced = _coerce_obj(obj)
+            if coerced is not None:
+                return coerced
         except json.JSONDecodeError:
             pass
 
@@ -56,8 +69,9 @@ def extract_json(raw: str) -> dict[str, Any]:
     if first_brace != -1 and last_brace > first_brace:
         try:
             obj = json.loads(text[first_brace : last_brace + 1])
-            if isinstance(obj, dict):
-                return obj
+            coerced = _coerce_obj(obj)
+            if coerced is not None:
+                return coerced
         except json.JSONDecodeError:
             pass
 

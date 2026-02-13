@@ -7,6 +7,7 @@ Signs receipt, submits settlement, handles disputes.
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from typing import Any
 
 from web3 import Web3
@@ -75,12 +76,12 @@ SETTLEMENT_ABI = [
 _client: SettlementClient | None = None
 
 
-def _normalize_addr(addr: str, label: str) -> str:
-    """Normalize an EVM address with checksum, warn on invalid."""
+def _normalize_addr(addr: str, label: str) -> str | None:
+    """Normalize an EVM address with checksum, return None on invalid."""
     if addr.startswith("0x") and len(addr) == 42:
         return Web3.to_checksum_address(addr)
-    logger.warning(f"{label} is not a valid EVM address: {addr}, using zero-address")
-    return "0x" + "00" * 20
+    logger.warning(f"{label} is not a valid EVM address: {addr}")
+    return None
 
 
 def get_settlement_client() -> SettlementClient:
@@ -108,6 +109,9 @@ def submit_deposit(
     client = get_settlement_client()
     request_id_bytes = Web3.keccak(text=request_id)
     buyer_addr = _normalize_addr(buyer, "buyer")
+    if buyer_addr is None:
+        logger.info(f"Deposit skipped (invalid buyer): req={request_id} buyer={buyer}")
+        return {"tx_hash": None, "mode": "mock"}
 
     try:
         tx_hash = client.submit_deposit(
@@ -143,6 +147,17 @@ def settle_request(
 
     buyer_addr = _normalize_addr(buyer, "buyer")
     seller_addr = _normalize_addr(seller, "seller")
+    if buyer_addr is None or seller_addr is None:
+        logger.info(
+            f"Settlement skipped (invalid address): req={request_id} "
+            f"buyer={buyer} seller={seller}"
+        )
+        return {
+            "tx_hash": None,
+            "mode": "mock",
+            "gateway_signature": "",
+            "gateway_address": client.gateway_address,
+        }
 
     try:
         gateway_sig = client.sign_settlement(
@@ -160,20 +175,32 @@ def settle_request(
 
     sig_hex = "0x" + gateway_sig.hex()
 
-    tx_hash = client.submit_settlement(
-        mandate_id=mandate_id_bytes,
-        request_id_str=request_id,
-        request_id=request_id_bytes,
-        buyer=buyer_addr,
-        seller=seller_addr,
-        max_price=max_price,
-        payout=payout,
-        receipt_hash=receipt_hash_bytes,
-        gateway_sig=gateway_sig,
-    )
+    try:
+        tx_hash = client.submit_settlement(
+            mandate_id=mandate_id_bytes,
+            request_id_str=request_id,
+            request_id=request_id_bytes,
+            buyer=buyer_addr,
+            seller=seller_addr,
+            max_price=max_price,
+            payout=payout,
+            receipt_hash=receipt_hash_bytes,
+            gateway_sig=gateway_sig,
+        )
+    except Exception as e:
+        logger.error(f"Settlement failed: req={request_id} error={e}")
+        return {
+            "tx_hash": None,
+            "mode": "error",
+            "error": str(e),
+            "gateway_signature": sig_hex,
+            "gateway_address": client.gateway_address,
+        }
+    mode = "chain" if tx_hash else "mock"
 
     return {
         "tx_hash": tx_hash,
+        "mode": mode,
         "gateway_signature": sig_hex,
         "gateway_address": client.gateway_address,
     }
@@ -189,22 +216,28 @@ def submit_dispute_open(*, request_id: str) -> dict[str, Any]:
         return {"tx_hash": None, "mode": "mock"}
 
     try:
-        tx = client.contract.functions.openDispute(
-            request_id_bytes,
-        ).build_transaction({
-            "chainId": int(client.w3.eth.chain_id),
-            "from": client.gateway_account.address,
-            "nonce": client.w3.eth.get_transaction_count(client.gateway_account.address),
-            "gas": 200_000,
-            "gasPrice": client.w3.eth.gas_price,
-        })
+        lock = getattr(client, "_tx_lock", None)
+        with (lock if lock else nullcontext()):
+            nonce_fn = getattr(client, "_next_nonce", None)
+            nonce = nonce_fn() if callable(nonce_fn) else client.w3.eth.get_transaction_count(client.gateway_account.address, "pending")
+            tx = client.contract.functions.openDispute(
+                request_id_bytes,
+            ).build_transaction({
+                "chainId": int(client.w3.eth.chain_id),
+                "from": client.gateway_account.address,
+                "nonce": nonce,
+                "gas": 200_000,
+                "gasPrice": client.w3.eth.gas_price,
+            })
 
-        signed_tx = client.w3.eth.account.sign_transaction(tx, client.gateway_private_key)
-        tx_hash = client.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        hex_hash = tx_hash.hex()
+            signed_tx = client.w3.eth.account.sign_transaction(tx, client.gateway_private_key)
+            tx_hash = client.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            hex_hash = tx_hash.hex()
         logger.info(f"Dispute open tx submitted: {hex_hash}")
         return {"tx_hash": hex_hash, "mode": "chain"}
     except Exception as e:
+        if hasattr(client, "_last_nonce"):
+            client._last_nonce = None
         logger.error(f"Dispute open tx failed: {e}")
         return {"tx_hash": None, "mode": "error", "error": str(e)}
 
@@ -219,23 +252,29 @@ def submit_dispute_resolve(*, request_id: str, final_payout: int) -> dict[str, A
         return {"tx_hash": None, "mode": "mock"}
 
     try:
-        tx = client.contract.functions.resolveDispute(
-            request_id_bytes,
-            final_payout,
-        ).build_transaction({
-            "chainId": int(client.w3.eth.chain_id),
-            "from": client.gateway_account.address,
-            "nonce": client.w3.eth.get_transaction_count(client.gateway_account.address),
-            "gas": 300_000,
-            "gasPrice": client.w3.eth.gas_price,
-        })
+        lock = getattr(client, "_tx_lock", None)
+        with (lock if lock else nullcontext()):
+            nonce_fn = getattr(client, "_next_nonce", None)
+            nonce = nonce_fn() if callable(nonce_fn) else client.w3.eth.get_transaction_count(client.gateway_account.address, "pending")
+            tx = client.contract.functions.resolveDispute(
+                request_id_bytes,
+                final_payout,
+            ).build_transaction({
+                "chainId": int(client.w3.eth.chain_id),
+                "from": client.gateway_account.address,
+                "nonce": nonce,
+                "gas": 300_000,
+                "gasPrice": client.w3.eth.gas_price,
+            })
 
-        signed_tx = client.w3.eth.account.sign_transaction(tx, client.gateway_private_key)
-        tx_hash = client.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        hex_hash = tx_hash.hex()
+            signed_tx = client.w3.eth.account.sign_transaction(tx, client.gateway_private_key)
+            tx_hash = client.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            hex_hash = tx_hash.hex()
         logger.info(f"Dispute resolve tx submitted: {hex_hash}")
         return {"tx_hash": hex_hash, "mode": "chain"}
     except Exception as e:
+        if hasattr(client, "_last_nonce"):
+            client._last_nonce = None
         logger.error(f"Dispute resolve tx failed: {e}")
         return {"tx_hash": None, "mode": "error", "error": str(e)}
 
@@ -250,21 +289,27 @@ def submit_finalize(*, request_id: str) -> dict[str, Any]:
         return {"tx_hash": None, "mode": "mock"}
 
     try:
-        tx = client.contract.functions.finalize(
-            request_id_bytes,
-        ).build_transaction({
-            "chainId": int(client.w3.eth.chain_id),
-            "from": client.gateway_account.address,
-            "nonce": client.w3.eth.get_transaction_count(client.gateway_account.address),
-            "gas": 200_000,
-            "gasPrice": client.w3.eth.gas_price,
-        })
+        lock = getattr(client, "_tx_lock", None)
+        with (lock if lock else nullcontext()):
+            nonce_fn = getattr(client, "_next_nonce", None)
+            nonce = nonce_fn() if callable(nonce_fn) else client.w3.eth.get_transaction_count(client.gateway_account.address, "pending")
+            tx = client.contract.functions.finalize(
+                request_id_bytes,
+            ).build_transaction({
+                "chainId": int(client.w3.eth.chain_id),
+                "from": client.gateway_account.address,
+                "nonce": nonce,
+                "gas": 200_000,
+                "gasPrice": client.w3.eth.gas_price,
+            })
 
-        signed_tx = client.w3.eth.account.sign_transaction(tx, client.gateway_private_key)
-        tx_hash = client.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        hex_hash = tx_hash.hex()
+            signed_tx = client.w3.eth.account.sign_transaction(tx, client.gateway_private_key)
+            tx_hash = client.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            hex_hash = tx_hash.hex()
         logger.info(f"Finalize tx submitted: {hex_hash}")
         return {"tx_hash": hex_hash, "mode": "chain"}
     except Exception as e:
+        if hasattr(client, "_last_nonce"):
+            client._last_nonce = None
         logger.error(f"Finalize tx failed: {e}")
         return {"tx_hash": None, "mode": "error", "error": str(e)}

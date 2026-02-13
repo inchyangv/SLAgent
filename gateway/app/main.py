@@ -26,7 +26,6 @@ from gateway.app.pricing import compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
 from gateway.app.settlement_client import (
     settle_request,
-    submit_deposit,
     submit_dispute_open,
     submit_dispute_resolve,
     submit_finalize,
@@ -37,6 +36,10 @@ from gateway.app.x402 import create_402_response, verify_payment_header
 logger = logging.getLogger("sla-gateway")
 
 app = FastAPI(title="SLAgent-402 Gateway", version="0.2.0")
+
+# Demo behavior toggles
+_DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
+_DEMO_INSTANT_PAYOUT = os.getenv("DEMO_INSTANT_PAYOUT", "true").lower() == "true"
 
 # CORS — enabled in demo mode so dashboard can call API from any origin
 _DEMO_CORS = os.getenv("DEMO_CORS", "true").lower() == "true"
@@ -219,9 +222,19 @@ async def register_mandate(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="Mandate must be a JSON object")
     mandate = mandate_store.register(body)
     mid = mandate.get("mandate_id", "")
+    tiers = mandate.get("bonus_rules", {}).get("tiers", [])
+    validators = mandate.get("validators", [])
     event_store.record(
         kind="negotiation.mandate_registered", actor="gateway", mandate_id=mid,
-        data={"max_price": mandate.get("max_price"), "buyer": mandate.get("buyer")},
+        data={
+            "offer_id": mandate.get("offer_id"),
+            "max_price": mandate.get("max_price"),
+            "base_pay": mandate.get("base_pay"),
+            "timeout_ms": mandate.get("timeout_ms"),
+            "validators": validators,
+            "tiers": tiers,
+            "buyer": mandate.get("buyer"),
+        },
     )
     logger.info(f"Mandate registered: {mid}")
     return JSONResponse(content=mandate)
@@ -293,7 +306,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
     seller_addr = mandate.get("seller") or settings.seller_address or settings.seller_upstream_url
     gateway_addr = settings.gateway_private_key and "" or ""  # filled by settlement_client
 
-    request_id = generate_request_id()
+    request_id_hint = str(payload.get("request_id", "")).strip()
+    request_id = request_id_hint or generate_request_id()
     event_store.record(
         kind="payment.verified", actor="gateway", request_id=request_id,
         mandate_id=mandate_id, data={"buyer": buyer, "mode": payment_info.get("mode", "hmac")},
@@ -441,26 +455,21 @@ async def call_endpoint(request: Request) -> JSONResponse:
         mandate_id=mandate_id, data={"receipt_hash": receipt.hashes.get("receipt_hash", "")},
     )
 
-    # Submit deposit → settle on-chain (buyer-funded escrow)
+    # Buyer-funded escrow: buyer submits deposit before paid request.
+    # Gateway only finalizes settlement using the deposited escrow.
     receipt_hash = receipt.hashes.get("receipt_hash", "")
-
-    # Step 1: Deposit buyer's max_price into escrow
-    deposit_result = submit_deposit(
-        request_id=request_id,
-        buyer=buyer,
-        amount=pricing_decision.max_price,
-    )
+    deposit_tx = request.headers.get("X-DEPOSIT-TX-HASH") or str(payload.get("deposit_tx_hash", "")).strip() or None
     event_store.record(
-        kind="chain.deposit_submitted", actor="gateway", request_id=request_id,
+        kind="chain.deposit_submitted", actor="buyer", request_id=request_id,
         mandate_id=mandate_id,
         data={
-            "tx_hash": deposit_result.get("tx_hash"),
-            "mode": deposit_result.get("mode"),
+            "tx_hash": deposit_tx,
             "amount": pricing_decision.max_price,
+            "source": "client_header" if deposit_tx else "missing",
         },
     )
 
-    # Step 2: Settle (distribute payout/refund) — only if deposit didn't hard-fail
+    # Step 1: Settle (distribute payout/refund) from already-deposited escrow
     settlement_result = settle_request(
         request_id=request_id,
         mandate_id=mandate_id,
@@ -470,11 +479,58 @@ async def call_endpoint(request: Request) -> JSONResponse:
         payout=pricing_decision.payout,
         receipt_hash=receipt_hash,
     )
+    if settlement_result.get("error"):
+        event_store.record(
+            kind="chain.settlement_failed", actor="gateway", request_id=request_id,
+            mandate_id=mandate_id,
+            data={"error": settlement_result.get("error")},
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "settlement_failed",
+                "reason": settlement_result.get("error"),
+                "request_id": request_id,
+            },
+        )
     event_store.record(
         kind="chain.settlement_submitted", actor="gateway", request_id=request_id,
         mandate_id=mandate_id,
         data={"tx_hash": settlement_result.get("tx_hash"), "mode": settlement_result.get("mode")},
     )
+
+    instant_open_tx = None
+    instant_resolve_tx = None
+    instant_payout_mode = None
+    # Demo-only: force immediate payout/refund visibility by opening+resolving dispute
+    # (resolver == gateway on current demo deployment).
+    if _DEMO_MODE and _DEMO_INSTANT_PAYOUT and settlement_result.get("mode") == "chain":
+        open_result = submit_dispute_open(request_id=request_id)
+        instant_open_tx = open_result.get("tx_hash")
+        event_store.record(
+            kind="chain.instant_payout_dispute_opened",
+            actor="gateway",
+            request_id=request_id,
+            mandate_id=mandate_id,
+            data={"tx_hash": instant_open_tx, "mode": open_result.get("mode")},
+        )
+        resolve_result = submit_dispute_resolve(
+            request_id=request_id,
+            final_payout=pricing_decision.payout,
+        )
+        instant_resolve_tx = resolve_result.get("tx_hash")
+        instant_payout_mode = resolve_result.get("mode")
+        event_store.record(
+            kind="chain.instant_payout_resolved",
+            actor="gateway",
+            request_id=request_id,
+            mandate_id=mandate_id,
+            data={
+                "tx_hash": instant_resolve_tx,
+                "mode": instant_payout_mode,
+                "final_payout": pricing_decision.payout,
+            },
+        )
 
     # Update receipt with settlement info
     receipt.signatures = {"gateway_signature": settlement_result["gateway_signature"]}
@@ -493,7 +549,6 @@ async def call_endpoint(request: Request) -> JSONResponse:
         except Exception as e:
             logger.warning(f"Gateway auto-attestation failed: {e}")
 
-    deposit_tx = deposit_result.get("tx_hash")
     settle_tx = settlement_result.get("tx_hash")
     # For backward compat, tx_hash = settle tx (or deposit tx if settle was mock)
     tx_hash = settle_tx or deposit_tx
@@ -517,6 +572,9 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "tx_hash": tx_hash,
             "deposit_tx_hash": deposit_tx,
             "settle_tx_hash": settle_tx,
+            "instant_dispute_open_tx_hash": instant_open_tx,
+            "instant_resolve_tx_hash": instant_resolve_tx,
+            "instant_payout_mode": instant_payout_mode,
             "breach_reasons": breach_reasons,
         }
     )
@@ -806,10 +864,6 @@ async def get_offer_detail(offer_id: str) -> JSONResponse:
 
 # --- Demo Run API (server-side buyer agent orchestration) ---
 
-import os as _os
-
-_DEMO_MODE = _os.getenv("DEMO_MODE", "true").lower() == "true"
-
 
 @app.post("/v1/demo/run")
 async def demo_run(request: Request) -> JSONResponse:
@@ -828,6 +882,8 @@ async def demo_run(request: Request) -> JSONResponse:
     seller_url = body.get("seller_url", settings.seller_upstream_url)
     sim_delay_ms = int(body.get("delay_ms", 0))
     simulator = body.get("simulator", {})
+    negotiate_raw = body.get("negotiate", True)
+    negotiate = negotiate_raw if isinstance(negotiate_raw, bool) else str(negotiate_raw).lower() not in ("0", "false", "no")
 
     # Record simulator settings event
     event_store.record(
@@ -839,8 +895,8 @@ async def demo_run(request: Request) -> JSONResponse:
         },
     )
 
-    buyer_key = _os.getenv("BUYER_PRIVATE_KEY")
-    buyer_addr = _os.getenv("BUYER_ADDRESS", "0xDEMO_BUYER")
+    buyer_key = os.getenv("BUYER_PRIVATE_KEY")
+    buyer_addr = os.getenv("BUYER_ADDRESS", "0x1111111111111111111111111111111111111111")
 
     try:
         from buyer_agent.client import BuyerAgent, InvariantViolation
@@ -856,18 +912,21 @@ async def demo_run(request: Request) -> JSONResponse:
 
     steps: list[dict] = []
 
-    # Step 1: Negotiate
-    try:
-        neg = await agent.negotiate_mandate()
-        steps.append({
-            "step": "negotiate",
-            "ok": True,
-            "mandate_id": neg.mandate_id,
-            "seller_accepted": neg.seller_accepted,
-            "summary": neg.summary,
-        })
-    except Exception as e:
-        steps.append({"step": "negotiate", "ok": False, "error": str(e)})
+    # Step 1: Negotiate (optional for autonomous tick mode)
+    if negotiate:
+        try:
+            neg = await agent.negotiate_mandate()
+            steps.append({
+                "step": "negotiate",
+                "ok": True,
+                "mandate_id": neg.mandate_id,
+                "seller_accepted": neg.seller_accepted,
+                "summary": neg.summary,
+            })
+        except Exception as e:
+            steps.append({"step": "negotiate", "ok": False, "error": str(e)})
+    else:
+        steps.append({"step": "negotiate", "ok": True, "skipped": True, "reason": "negotiate=false"})
 
     # Step 2: Execute scenarios with simulator delay
     results: list[dict] = []
@@ -881,9 +940,12 @@ async def demo_run(request: Request) -> JSONResponse:
                 "request_id": result.request_id,
                 "payout": result.payout,
                 "refund": result.refund,
+                "max_price": result.max_price,
                 "validation_passed": result.validation_passed,
                 "receipt_hash": result.receipt_hash,
                 "tx_hash": result.tx_hash,
+                "deposit_tx_hash": result.deposit_tx_hash,
+                "settle_tx_hash": result.settle_tx_hash,
                 "latency_ms": result.metrics.get("latency_ms"),
                 "delay_ms_applied": sim_delay_ms,
                 "attestations": {

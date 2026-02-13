@@ -40,7 +40,7 @@
         tr:hover { background: #151515; cursor: pointer; }
         .mono { font-family: monospace; font-size: 0.75rem; }
         .hash { font-family: monospace; font-size: 0.72rem; color: #666; }
-        .stats { display: flex; gap: 10px; margin-bottom: 12px; }
+        .stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
         .stat-card { background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px 14px; min-width: 110px; text-align: center; }
         .stat-value { font-size: 1.3rem; font-weight: 700; color: #fff; }
         .stat-label { font-size: 0.7rem; color: #666; margin-top: 2px; }
@@ -71,9 +71,17 @@
         .balance-addr { font-size: 0.72rem; color: #6a8199; }
         .balance-amount { font-size: 0.86rem; color: #d8ebff; font-weight: 600; font-variant-numeric: tabular-nums; }
         .balance-error { color: #d87a7a; font-size: 0.74rem; padding: 4px 2px 0; }
+        .eval-grid { display: grid; grid-template-columns: repeat(5, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
+        .eval-card { background: #0d131a; border: 1px solid #1d2732; border-radius: 6px; padding: 8px; }
+        .eval-label { font-size: 0.65rem; color: #6f8193; text-transform: uppercase; margin-bottom: 3px; }
+        .eval-value { font-size: 0.8rem; color: #d8ebff; font-family: monospace; }
+        .muted { color: #777; font-size: 0.74rem; }
         @media (max-width: 980px) {
             .top-shell { flex-direction: column; }
             .balance-panel { width: 100%; max-width: none; min-width: 0; }
+        }
+        @media (max-width: 880px) {
+            .eval-grid { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
@@ -132,6 +140,25 @@
     </div>
 </div>
 
+<!-- Autonomous SLA Evaluator -->
+<div class="card" style="margin-bottom:12px;padding:10px 14px">
+    <div class="row" style="flex-wrap:wrap;gap:10px;margin-bottom:0">
+        <span class="badge badge-info">Autonomous SLA Evaluator</span>
+        <button class="primary" id="autopilot-btn" onclick="toggleAutopilot()">Start Autopilot</button>
+        <label style="display:inline;margin:0">Tick(sec):</label>
+        <input id="autopilot-interval" type="number" min="1" max="10" value="1" style="width:74px">
+        <span id="autopilot-state" class="badge badge-zero">STOPPED</span>
+        <span style="font-size:0.72rem;color:#888">You change only SLA inputs; agent runs call, payment, and settlement.</span>
+    </div>
+    <div class="eval-grid">
+        <div class="eval-card"><div class="eval-label">Inferred Mode</div><div id="eval-mode" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">Last Request</div><div id="eval-request" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">SLA Status</div><div id="eval-sla" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">Payout</div><div id="eval-payout" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">Refund</div><div id="eval-refund" class="eval-value">-</div></div>
+    </div>
+</div>
+
 <!-- Stats -->
 <div class="stats" id="stats">
     <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Requests</div></div>
@@ -139,6 +166,9 @@
     <div class="stat-card"><div class="stat-value" id="stat-fail">0</div><div class="stat-label">Fail</div></div>
     <div class="stat-card"><div class="stat-value" id="stat-avg-lat">-</div><div class="stat-label">Avg ms</div></div>
     <div class="stat-card"><div class="stat-value" id="stat-attest">0</div><div class="stat-label">3/3 Attest</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-gross">0.0000</div><div class="stat-label">Gross Locked</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-paid">0.0000</div><div class="stat-label">Seller Paid</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-refund">0.0000</div><div class="stat-label">Buyer Refund</div></div>
 </div>
 
 <div class="grid">
@@ -165,6 +195,22 @@
         <h2 style="margin-top:12px">Active Mandates</h2>
         <div id="mandate-list" class="empty" style="padding:12px">No mandates yet</div>
         <div style="margin-top:8px"><button onclick="fetchMandates()">Refresh</button></div>
+    </div>
+
+    <!-- Negotiation Trace -->
+    <div class="card">
+        <h2>Negotiation Trace</h2>
+        <div id="negotiation-summary" class="kv">
+            <dt>Status</dt><dd><span class="badge badge-info">No negotiation yet</span></dd>
+        </div>
+        <div style="margin-top:8px" class="muted">Live negotiation events</div>
+        <div id="negotiation-log" class="log" style="max-height:150px;margin-top:4px">
+            <div class="log-entry info">No negotiation events yet.</div>
+        </div>
+        <div class="row" style="margin-top:8px">
+            <button onclick="fetchNegotiationTrace({silent:false})">Refresh Trace</button>
+            <button onclick="fetchTimeline('negotiation')">View In Timeline</button>
+        </div>
     </div>
 
     <!-- Disputes -->
@@ -199,6 +245,9 @@
             <button onclick="fetchTimeline()">Search</button>
             <button onclick="fetchTimeline('all')">All Events</button>
             <button class="danger" onclick="fetchTimeline('violation')">SLA Violations Only</button>
+            <button onclick="fetchTimeline('negotiation')">Negotiation Only</button>
+            <button id="live-events-btn" class="primary" onclick="toggleLiveEvents()">Live ON</button>
+            <label style="display:inline;font-size:0.78rem;margin:0"><input type="checkbox" id="timeline-autoscroll" checked> Auto-scroll</label>
             <span style="flex:1"></span>
             <span id="timeline-count" style="font-size:0.75rem;color:#888"></span>
         </div>
@@ -252,7 +301,13 @@
 <script>
     let allReceipts = [];
     let currentFilter = 'all';
+    let autopilotTimer = null;
+    let autopilotBusy = false;
     let balancePollTimer = null;
+    let receiptsPollTimer = null;
+    let liveEventsTimer = null;
+    let negotiationPollTimer = null;
+    let liveEventsEnabled = true;
     let balanceErrorLogged = false;
     const gw = () => document.getElementById('gateway-url').value.replace(/\/$/,'');
     const sl = () => document.getElementById('seller-url').value.replace(/\/$/,'');
@@ -370,6 +425,119 @@
         return modes;
     }
 
+    function inferAutonomousMode(sim) {
+        if (sim.force_timeout) return 'timeout';
+        if (sim.force_upstream_error) return 'error';
+        if (sim.force_schema_fail) return 'invalid';
+        if ((sim.delay_ms || 0) >= 3000) return 'slow';
+        return 'fast';
+    }
+
+    function setAutopilotVisual(active) {
+        const btn = document.getElementById('autopilot-btn');
+        const state = document.getElementById('autopilot-state');
+        const demoBtn = document.getElementById('run-demo-btn');
+        const intervalInput = document.getElementById('autopilot-interval');
+        if (active) {
+            btn.textContent = 'Stop Autopilot';
+            btn.classList.remove('primary');
+            btn.classList.add('danger');
+            state.className = 'badge badge-pass';
+            state.textContent = 'RUNNING';
+            demoBtn.disabled = true;
+            intervalInput.disabled = true;
+        } else {
+            btn.textContent = 'Start Autopilot';
+            btn.classList.remove('danger');
+            btn.classList.add('primary');
+            state.className = 'badge badge-zero';
+            state.textContent = 'STOPPED';
+            demoBtn.disabled = false;
+            intervalInput.disabled = false;
+        }
+    }
+
+    function updateEvaluator(result, mode) {
+        const payout = parseInt(result?.payout || '0');
+        const refund = parseInt(result?.refund || '0');
+        const maxPrice = parseInt(result?.max_price || '0');
+        const pass = Boolean(result?.ok) && Boolean(result?.validation_passed);
+        const full = pass && maxPrice > 0 && payout >= maxPrice;
+        const slaClass = full ? 'badge-pass' : (pass ? 'badge-partial' : 'badge-fail');
+        const slaText = full ? 'PASS (FULL)' : (pass ? 'PASS (DEGRADED)' : 'BREACH');
+
+        document.getElementById('eval-mode').textContent = mode || '-';
+        document.getElementById('eval-request').textContent = result?.request_id || '-';
+        document.getElementById('eval-sla').innerHTML = `<span class="badge ${slaClass}">${slaText}</span>`;
+        document.getElementById('eval-payout').textContent = `${(payout / 1e6).toFixed(4)} USDC`;
+        document.getElementById('eval-refund').textContent = `${(refund / 1e6).toFixed(4)} USDC`;
+    }
+
+    async function runAutopilotTick() {
+        if (autopilotBusy) return;
+        autopilotBusy = true;
+        const sim = getSimSettings();
+        const mode = inferAutonomousMode(sim);
+        document.getElementById('eval-mode').textContent = mode;
+
+        try {
+            const resp = await fetch(`${gw()}/v1/demo/run`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    modes: [mode],
+                    seller_url: sl(),
+                    delay_ms: sim.delay_ms,
+                    simulator: sim,
+                    negotiate: false,
+                }),
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                addLog(`Autopilot tick failed: ${err.detail || resp.statusText}`, 'err');
+                return;
+            }
+            const data = await resp.json();
+            const result = (data.results || [])[0] || {};
+            updateEvaluator(result, mode);
+            addLog(
+                `Autopilot: mode=${mode} req=${result.request_id || '-'} payout=${result.payout || '0'} refund=${result.refund || '0'}`,
+                result.ok ? 'ok' : 'err',
+            );
+            await fetchReceipts({silent: true});
+            await fetchBalances({silent: true});
+            if (result.request_id) {
+                document.getElementById('timeline-search').value = result.request_id;
+            }
+        } catch (e) {
+            addLog(`Autopilot error: ${e.message}`, 'err');
+        } finally {
+            autopilotBusy = false;
+        }
+    }
+
+    function stopAutopilot() {
+        if (autopilotTimer) {
+            clearInterval(autopilotTimer);
+            autopilotTimer = null;
+        }
+        setAutopilotVisual(false);
+    }
+
+    async function toggleAutopilot() {
+        if (autopilotTimer) {
+            stopAutopilot();
+            addLog('Autopilot stopped', 'info');
+            return;
+        }
+        const sec = Math.max(1, Math.min(10, parseInt(document.getElementById('autopilot-interval').value) || 1));
+        document.getElementById('autopilot-interval').value = sec;
+        setAutopilotVisual(true);
+        addLog(`Autopilot started (tick=${sec}s)`, 'ok');
+        await runAutopilotTick();
+        autopilotTimer = setInterval(runAutopilotTick, sec * 1000);
+    }
+
     // ── SLA Offer Catalog ──
     let cachedOffers = [];
 
@@ -402,6 +570,75 @@
             `Tiers: ${tiers} | Base: ${(parseInt(offer.base_pay)/1e6).toFixed(2)} USDC`;
     });
 
+    function formatUsdc(raw) {
+        return `${(parseInt(raw || '0') / 1e6).toFixed(4)} USDC`;
+    }
+
+    function formatTierSummary(mandate) {
+        const tiers = mandate?.bonus_rules?.tiers || [];
+        if (tiers.length === 0) return '-';
+        return tiers.map(t => `<=${t.lte_ms}ms:${(parseInt(t.payout || '0') / 1e6).toFixed(2)}`).join(' | ');
+    }
+
+    function renderNegotiationSummary(mandate, sellerAcceptance = null) {
+        const el = document.getElementById('negotiation-summary');
+        if (!mandate) {
+            el.innerHTML = '<dt>Status</dt><dd><span class="badge badge-info">No negotiation yet</span></dd>';
+            return;
+        }
+        const acceptedBadge = sellerAcceptance === null
+            ? '<span class="badge badge-info">unknown</span>'
+            : (sellerAcceptance
+                ? '<span class="badge badge-pass">accepted</span>'
+                : '<span class="badge badge-fail">rejected</span>');
+        const validators = (mandate.validators || []).map(v => `${v.type}:${v.schema_id || '-'}`).join(', ') || '-';
+        const id = mandate.mandate_id || '-';
+        const shortId = id.length > 24 ? `${id.slice(0, 12)}...${id.slice(-6)}` : id;
+        el.innerHTML = `
+            <dt>Mandate ID</dt><dd class="mono" title="${id}">${shortId}</dd>
+            <dt>Offer</dt><dd>${mandate.offer_id || '-'}</dd>
+            <dt>Max Price</dt><dd>${formatUsdc(mandate.max_price)}</dd>
+            <dt>Base Pay</dt><dd>${formatUsdc(mandate.base_pay)}</dd>
+            <dt>Timeout</dt><dd>${mandate.timeout_ms || '-'} ms</dd>
+            <dt>Validators</dt><dd>${validators}</dd>
+            <dt>Tiers</dt><dd>${formatTierSummary(mandate)}</dd>
+            <dt>Seller Accept</dt><dd>${acceptedBadge}</dd>
+        `;
+    }
+
+    function renderNegotiationEvents(events) {
+        const el = document.getElementById('negotiation-log');
+        if (!events || events.length === 0) {
+            el.innerHTML = '<div class="log-entry info">No negotiation events yet.</div>';
+            return;
+        }
+        el.innerHTML = events.map((e) => {
+            const ts = e.ts_iso || new Date(e.ts * 1000).toISOString().slice(11, 19);
+            const payload = Object.entries(e.data || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ');
+            const mid = e.mandate_id ? ` mid=${e.mandate_id.slice(0, 10)}...` : '';
+            return `<div class="log-entry info">[${ts}] ${e.kind}${mid}${payload ? ` | ${payload}` : ''}</div>`;
+        }).join('');
+        el.scrollTop = el.scrollHeight;
+    }
+
+    async function fetchNegotiationTrace({silent = true} = {}) {
+        try {
+            const [mandatesResp, eventsResp] = await Promise.all([
+                fetch(`${gw()}/v1/mandates?limit=30`),
+                fetch(`${gw()}/v1/events?kind=negotiation&limit=80`),
+            ]);
+            const mandatesData = await mandatesResp.json();
+            const eventsData = await eventsResp.json();
+            const mandates = mandatesData.mandates || [];
+            const latestMandate = mandates.length > 0 ? mandates[mandates.length - 1] : null;
+            renderNegotiationSummary(latestMandate);
+            renderNegotiationEvents(eventsData.events || []);
+            if (!silent) addLog(`Negotiation trace loaded: mandates=${mandates.length}, events=${(eventsData.events || []).length}`, 'ok');
+        } catch (e) {
+            if (!silent) addLog(`Negotiation trace error: ${e.message}`, 'err');
+        }
+    }
+
     async function selectOffer() {
         const offerId = document.getElementById('offer-select').value;
         if (!offerId) { addLog('Select an offer first', 'err'); return; }
@@ -428,19 +665,24 @@
             });
             const data = await resp.json();
             addLog(`Mandate registered from ${offer.name}: ${data.mandate_id?.slice(0,12)}...`, 'ok');
+            renderNegotiationSummary(data, null);
 
             // Try to accept mandate on seller
             try {
-                await fetch(`${sl()}/seller/mandates/accept`, {
+                const sellerResp = await fetch(`${sl()}/seller/mandates/accept`, {
                     method: 'POST', headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({...mandate, mandate_id: data.mandate_id}),
                 });
-                addLog(`Seller accepted mandate (${offer.name})`, 'ok');
+                const sellerData = await sellerResp.json();
+                const accepted = Boolean(sellerData.accepted);
+                renderNegotiationSummary(data, accepted);
+                addLog(`Seller mandate response (${offer.name}): ${accepted ? 'accepted' : 'rejected'}`, accepted ? 'ok' : 'err');
             } catch (e) {
                 addLog(`Seller accept skipped: ${e.message}`, 'info');
             }
 
             await fetchMandates();
+            await fetchNegotiationTrace({silent: true});
         } catch (e) {
             addLog(`Negotiate error: ${e.message}`, 'err');
         }
@@ -476,6 +718,7 @@
             const mandates = data.mandates || [];
             if (mandates.length === 0) {
                 el.innerHTML = '<div class="empty" style="padding:8px">No mandates</div>';
+                renderNegotiationSummary(null);
                 return;
             }
             el.innerHTML = mandates.map(m => {
@@ -486,6 +729,7 @@
                     <span class="mono">${short}</span> — max_price=${mp}
                 </div>`;
             }).join('');
+            renderNegotiationSummary(mandates[mandates.length - 1]);
             addLog(`${mandates.length} mandate(s) found`, 'ok');
         } catch (e) {
             el.innerHTML = `<div class="empty" style="padding:8px">Error: ${e.message}</div>`;
@@ -493,14 +737,14 @@
     }
 
     // ── Receipts ──
-    async function fetchReceipts() {
+    async function fetchReceipts({silent = false} = {}) {
         try {
             const resp = await fetch(`${gw()}/v1/receipts?limit=100`);
             allReceipts = await resp.json();
             renderReceipts();
-            addLog(`${allReceipts.length} receipt(s) loaded`, 'ok');
+            if (!silent) addLog(`${allReceipts.length} receipt(s) loaded`, 'ok');
         } catch (e) {
-            addLog(`Receipts error: ${e.message}`, 'err');
+            if (!silent) addLog(`Receipts error: ${e.message}`, 'err');
         }
     }
 
@@ -570,6 +814,13 @@
         document.getElementById('stat-avg-lat').textContent = lats.length > 0 ? Math.round(lats.reduce((a,b)=>a+b,0)/lats.length) : '-';
         const complete = allReceipts.filter(r => r.attestations?.complete).length;
         document.getElementById('stat-attest').textContent = complete;
+
+        const grossLocked = allReceipts.reduce((sum, r) => sum + (parseInt(r.pricing?.max_price || '0') || 0), 0);
+        const sellerPaid = allReceipts.reduce((sum, r) => sum + (parseInt(r.pricing?.computed_payout || '0') || 0), 0);
+        const buyerRefund = allReceipts.reduce((sum, r) => sum + (parseInt(r.pricing?.computed_refund || '0') || 0), 0);
+        document.getElementById('stat-gross').textContent = (grossLocked / 1e6).toFixed(4);
+        document.getElementById('stat-paid').textContent = (sellerPaid / 1e6).toFixed(4);
+        document.getElementById('stat-refund').textContent = (buyerRefund / 1e6).toFixed(4);
     }
 
     // ── Receipt Detail ──
@@ -667,11 +918,16 @@
             fetchMandates(),
             fetchReceipts(),
             fetchBalances({silent: false}),
+            fetchNegotiationTrace({silent: true}),
         ]);
     }
 
     // ── Demo Run API ──
     async function runDemo() {
+        if (autopilotTimer) {
+            addLog('Stop Autopilot before running batch demo', 'err');
+            return;
+        }
         const btn = document.getElementById('run-demo-btn');
         btn.disabled = true;
         btn.textContent = 'Running...';
@@ -699,6 +955,7 @@
             await fetchReceipts();
             await fetchMandates();
             await fetchBalances({silent: false});
+            await fetchNegotiationTrace({silent: true});
         } catch (e) {
             addLog(`Demo error: ${e.message}`, 'err');
         } finally {
@@ -715,16 +972,22 @@
         'chain': '#ff5722', 'attestation': '#8bc34a', 'sla': '#f44336', 'simulator': '#e91e63',
     };
 
-    async function fetchTimeline(mode) {
+    async function fetchTimeline(mode, {silent = false, autoscroll = false} = {}) {
         const search = document.getElementById('timeline-search').value.trim();
         let url = `${gw()}/v1/events?limit=200`;
         if (mode === 'all') {
             // no filter
+        } else if (mode === 'negotiation') {
+            url += '&kind=negotiation';
         } else if (mode === 'violation') {
             url += '&kind=validation.schema_fail';  // will also check pricing for non-full
         } else if (search) {
-            // Could be request_id or mandate_id
-            url += `&request_id=${encodeURIComponent(search)}`;
+            // Heuristic: mandate ids are usually hex-ish; otherwise treat as request id
+            if (search.startsWith('0x')) {
+                url += `&mandate_id=${encodeURIComponent(search)}`;
+            } else {
+                url += `&request_id=${encodeURIComponent(search)}`;
+            }
         } else {
             return;
         }
@@ -742,14 +1005,14 @@
                     (e.kind === 'pricing.computed' && e.data?.payout < parseInt(e.data?.max_price || '999999'))
                 );
             }
-            renderTimeline(events);
-            addLog(`Timeline: ${events.length} events`, 'ok');
+            renderTimeline(events, {autoscroll});
+            if (!silent) addLog(`Timeline: ${events.length} events`, 'ok');
         } catch (e) {
-            addLog(`Timeline error: ${e.message}`, 'err');
+            if (!silent) addLog(`Timeline error: ${e.message}`, 'err');
         }
     }
 
-    function renderTimeline(events) {
+    function renderTimeline(events, {autoscroll = false} = {}) {
         const el = document.getElementById('timeline-body');
         document.getElementById('timeline-count').textContent = `${events.length} events`;
         if (events.length === 0) {
@@ -774,16 +1037,83 @@
                 ${ids}
             </div>`;
         }).join('');
+
+        if (autoscroll && document.getElementById('timeline-autoscroll').checked) {
+            el.scrollTop = el.scrollHeight;
+        }
     }
 
-    // Auto-fetch on load + live USDC balance polling (2s)
+    function setLiveEventsVisual(active) {
+        const btn = document.getElementById('live-events-btn');
+        if (active) {
+            btn.textContent = 'Live ON';
+            btn.classList.remove('danger');
+            btn.classList.add('primary');
+        } else {
+            btn.textContent = 'Live OFF';
+            btn.classList.remove('primary');
+            btn.classList.add('danger');
+        }
+    }
+
+    function startLiveEvents() {
+        if (liveEventsTimer) return;
+        liveEventsEnabled = true;
+        setLiveEventsVisual(true);
+        fetchTimeline('all', {silent: true, autoscroll: true});
+        liveEventsTimer = window.setInterval(() => {
+            fetchTimeline('all', {silent: true, autoscroll: true});
+        }, 1000);
+    }
+
+    function stopLiveEvents() {
+        liveEventsEnabled = false;
+        if (liveEventsTimer) {
+            window.clearInterval(liveEventsTimer);
+            liveEventsTimer = null;
+        }
+        setLiveEventsVisual(false);
+    }
+
+    function toggleLiveEvents() {
+        if (liveEventsEnabled) {
+            stopLiveEvents();
+            addLog('Live timeline disabled', 'info');
+            return;
+        }
+        startLiveEvents();
+        addLog('Live timeline enabled', 'ok');
+    }
+
+    // Auto-fetch on load + live polling
     refreshAll();
+    setAutopilotVisual(false);
+    setLiveEventsVisual(liveEventsEnabled);
+    if (liveEventsEnabled) startLiveEvents();
     balancePollTimer = window.setInterval(() => {
         fetchBalances({silent: true});
+    }, 1000);
+    receiptsPollTimer = window.setInterval(() => {
+        fetchReceipts({silent: true});
+    }, 1500);
+    negotiationPollTimer = window.setInterval(() => {
+        fetchNegotiationTrace({silent: true});
     }, 2000);
     window.addEventListener('beforeunload', () => {
         if (balancePollTimer) {
             window.clearInterval(balancePollTimer);
+        }
+        if (receiptsPollTimer) {
+            window.clearInterval(receiptsPollTimer);
+        }
+        if (negotiationPollTimer) {
+            window.clearInterval(negotiationPollTimer);
+        }
+        if (autopilotTimer) {
+            window.clearInterval(autopilotTimer);
+        }
+        if (liveEventsTimer) {
+            window.clearInterval(liveEventsTimer);
         }
     });
 </script>

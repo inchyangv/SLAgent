@@ -7,6 +7,7 @@ Handles chain submission, idempotency, and retry logic.
 from __future__ import annotations
 
 import logging
+from threading import Lock
 from typing import Any
 
 from eth_account import Account
@@ -44,12 +45,27 @@ class SettlementClient:
 
         # Idempotency: track submitted request_ids
         self._submitted: set[str] = set()
+        self._tx_lock = Lock()
+        self._last_nonce: int | None = None
 
     @property
     def gateway_address(self) -> str:
         if self.gateway_account:
             return self.gateway_account.address
         return ""
+
+    def _next_nonce(self) -> int:
+        if not self.w3 or not self.gateway_account:
+            raise RuntimeError("Chain client not initialized")
+        # Use pending nonce and keep a local monotonic nonce cache.
+        # Some RPCs lag on pending nonce visibility under rapid submissions.
+        chain_nonce = self.w3.eth.get_transaction_count(self.gateway_account.address, "pending")
+        if self._last_nonce is None:
+            nonce = chain_nonce
+        else:
+            nonce = max(chain_nonce, self._last_nonce + 1)
+        self._last_nonce = nonce
+        return nonce
 
     def sign_settlement(
         self,
@@ -103,26 +119,28 @@ class SettlementClient:
             return None
 
         try:
-            tx = self.contract.functions.deposit(
-                request_id,
-                Web3.to_checksum_address(buyer),
-                amount,
-            ).build_transaction({
-                "chainId": int(self.w3.eth.chain_id),
-                "from": self.gateway_account.address,
-                "nonce": self.w3.eth.get_transaction_count(self.gateway_account.address),
-                "gas": 200_000,
-                "gasPrice": self.w3.eth.gas_price,
-            })
+            with self._tx_lock:
+                tx = self.contract.functions.deposit(
+                    request_id,
+                    Web3.to_checksum_address(buyer),
+                    amount,
+                ).build_transaction({
+                    "chainId": int(self.w3.eth.chain_id),
+                    "from": self.gateway_account.address,
+                    "nonce": self._next_nonce(),
+                    "gas": 200_000,
+                    "gasPrice": self.w3.eth.gas_price,
+                })
 
-            signed_tx = self.w3.eth.account.sign_transaction(tx, self.gateway_private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            hex_hash = tx_hash.hex()
+                signed_tx = self.w3.eth.account.sign_transaction(tx, self.gateway_private_key)
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                hex_hash = tx_hash.hex()
 
             logger.info(f"Deposit tx submitted: {hex_hash}")
             return hex_hash
 
         except Exception as e:
+            self._last_nonce = None
             logger.error(f"Deposit tx failed: {e}")
             raise
 
@@ -160,31 +178,33 @@ class SettlementClient:
 
         try:
             # Build transaction
-            tx = self.contract.functions.settle(
-                mandate_id,
-                request_id,
-                Web3.to_checksum_address(buyer),
-                Web3.to_checksum_address(seller),
-                max_price,
-                payout,
-                receipt_hash,
-                gateway_sig,
-            ).build_transaction({
-                "chainId": int(self.w3.eth.chain_id),
-                "from": self.gateway_account.address,
-                "nonce": self.w3.eth.get_transaction_count(self.gateway_account.address),
-                "gas": 300_000,
-                "gasPrice": self.w3.eth.gas_price,
-            })
+            with self._tx_lock:
+                tx = self.contract.functions.settle(
+                    mandate_id,
+                    request_id,
+                    Web3.to_checksum_address(buyer),
+                    Web3.to_checksum_address(seller),
+                    max_price,
+                    payout,
+                    receipt_hash,
+                    gateway_sig,
+                ).build_transaction({
+                    "chainId": int(self.w3.eth.chain_id),
+                    "from": self.gateway_account.address,
+                    "nonce": self._next_nonce(),
+                    "gas": 300_000,
+                    "gasPrice": self.w3.eth.gas_price,
+                })
 
-            signed_tx = self.w3.eth.account.sign_transaction(tx, self.gateway_private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            hex_hash = tx_hash.hex()
+                signed_tx = self.w3.eth.account.sign_transaction(tx, self.gateway_private_key)
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                hex_hash = tx_hash.hex()
 
             logger.info(f"Settlement tx submitted: {hex_hash}")
             return hex_hash
 
         except Exception as e:
+            self._last_nonce = None
             logger.error(f"Settlement tx failed: {e}")
             # Remove from submitted so it can be retried
             self._submitted.discard(request_id_str)

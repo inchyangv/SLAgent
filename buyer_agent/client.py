@@ -15,10 +15,13 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from eth_account import Account
+from web3 import Web3
 
 from gateway.app.hashing import compute_mandate_id
 from gateway.app.x402 import create_payment_token, create_x402_payment
@@ -71,6 +74,8 @@ class BuyerResult:
     tx_hash: str | None
     seller_response: dict[str, Any]
     invariant_checks: list[dict[str, Any]]
+    deposit_tx_hash: str | None = None
+    settle_tx_hash: str | None = None
     error: str | None = None
     attestation_status: dict[str, Any] = field(default_factory=dict)
 
@@ -86,7 +91,7 @@ class BuyerAgent:
         self,
         gateway_url: str = "http://localhost:8000",
         seller_url: str = "http://localhost:8001",
-        buyer_address: str = "0xBUYER_AGENT_0000000000000000000000000001",
+        buyer_address: str = "0x1111111111111111111111111111111111111111",
         max_price: str = "100000",
         timeout: float = 30.0,
         buyer_private_key: str | None = None,
@@ -98,6 +103,9 @@ class BuyerAgent:
         self.max_price = max_price
         self.timeout = timeout
         self.negotiation: NegotiationResult | None = None
+        self._buyer_w3: Web3 | None = None
+        self._buyer_account: Any | None = None
+        self._last_nonce: int | None = None
 
     async def discover_seller(self) -> dict[str, Any]:
         """Discover seller capabilities via GET /seller/capabilities."""
@@ -215,6 +223,85 @@ class BuyerAgent:
         })
         return {"X-PAYMENT": header_val}
 
+    def _make_request_id(self, mode: str) -> str:
+        ts_ms = int(time.time() * 1000)
+        return f"req_{mode}_{ts_ms}_{uuid.uuid4().hex[:8]}"
+
+    def _init_buyer_chain(self) -> bool:
+        rpc_url = os.getenv("CHAIN_RPC_URL", "")
+        settlement = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
+        if not all([rpc_url, settlement, self.buyer_private_key]):
+            return False
+
+        if self._buyer_w3 is None:
+            self._buyer_w3 = Web3(Web3.HTTPProvider(rpc_url))
+        if self._buyer_account is None:
+            self._buyer_account = Account.from_key(self.buyer_private_key)
+        return True
+
+    def _next_buyer_nonce(self) -> int:
+        if not self._buyer_w3 or not self._buyer_account:
+            raise RuntimeError("buyer chain client not initialized")
+
+        chain_nonce = self._buyer_w3.eth.get_transaction_count(self._buyer_account.address, "pending")
+        if self._last_nonce is None:
+            nonce = chain_nonce
+        else:
+            nonce = max(chain_nonce, self._last_nonce + 1)
+        self._last_nonce = nonce
+        return nonce
+
+    def _submit_buyer_deposit(self, request_id: str, amount: int) -> str | None:
+        """Submit buyer-funded deposit tx before paid request."""
+        if not self._init_buyer_chain():
+            return None
+
+        assert self._buyer_w3 is not None
+        assert self._buyer_account is not None
+
+        settlement_addr = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
+        if not settlement_addr:
+            return None
+
+        abi = [{
+            "inputs": [
+                {"name": "requestId", "type": "bytes32"},
+                {"name": "buyer", "type": "address"},
+                {"name": "amount", "type": "uint256"},
+            ],
+            "name": "deposit",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function",
+        }]
+
+        request_id_bytes = Web3.keccak(text=request_id)
+        contract = self._buyer_w3.eth.contract(
+            address=Web3.to_checksum_address(settlement_addr),
+            abi=abi,
+        )
+
+        chain_id = int(os.getenv("CHAIN_ID", str(self._buyer_w3.eth.chain_id)))
+        tx = contract.functions.deposit(
+            request_id_bytes,
+            Web3.to_checksum_address(self.buyer_address),
+            amount,
+        ).build_transaction({
+            "chainId": chain_id,
+            "from": self._buyer_account.address,
+            "nonce": self._next_buyer_nonce(),
+            "gas": 220_000,
+            # Use legacy gas fields for SKALE compatibility.
+            "gasPrice": self._buyer_w3.eth.gas_price,
+        })
+
+        signed = self._buyer_w3.eth.account.sign_transaction(tx, self.buyer_private_key)
+        tx_hash = self._buyer_w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = self._buyer_w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        if int(receipt.status) != 1:
+            raise RuntimeError(f"buyer deposit tx failed: {tx_hash.hex()}")
+        return tx_hash.hex()
+
     async def call(self, mode: str = "fast", delay_ms: int = 0) -> BuyerResult:
         """Execute the full buyer flow: 402 challenge → paid request → verify.
 
@@ -229,7 +316,8 @@ class BuyerAgent:
             InvariantViolation: If receipt invariants fail (fail-closed behavior).
         """
         max_price_int = int(self.max_price)
-        call_body: dict = {"mode": mode}
+        request_id_hint = self._make_request_id(mode)
+        call_body: dict = {"mode": mode, "request_id": request_id_hint}
         if delay_ms > 0:
             call_body["delay_ms"] = delay_ms
 
@@ -257,8 +345,32 @@ class BuyerAgent:
                     error=f"Expected 402, got {resp_402.status_code}",
                 )
 
-            # Step 2: Paid request
+            # Step 2: Buyer-funded on-chain deposit (if chain env is configured)
+            try:
+                deposit_tx_hash = self._submit_buyer_deposit(request_id_hint, max_price_int)
+            except Exception as e:
+                return BuyerResult(
+                    request_id=request_id_hint,
+                    mode=mode,
+                    success=False,
+                    metrics={},
+                    validation_passed=False,
+                    payout=0,
+                    refund=0,
+                    max_price=max_price_int,
+                    receipt_hash="",
+                    tx_hash=None,
+                    deposit_tx_hash=None,
+                    settle_tx_hash=None,
+                    seller_response={},
+                    invariant_checks=[],
+                    error=f"Buyer deposit failed: {e}",
+                )
+
+            # Step 3: Paid request
             headers = self._make_payment_header()
+            if deposit_tx_hash:
+                headers["X-DEPOSIT-TX-HASH"] = deposit_tx_hash
             query_params = f"mode={mode}"
             if delay_ms > 0:
                 query_params += f"&delay_ms={delay_ms}"
@@ -280,6 +392,8 @@ class BuyerAgent:
                     max_price=max_price_int,
                     receipt_hash="",
                     tx_hash=None,
+                    deposit_tx_hash=deposit_tx_hash,
+                    settle_tx_hash=None,
                     seller_response={},
                     invariant_checks=[],
                     error=f"Paid request failed: {resp.status_code} {resp.text[:200]}",
@@ -295,6 +409,8 @@ class BuyerAgent:
         refund = int(data.get("refund", "0"))
         receipt_hash = data.get("receipt_hash", "")
         tx_hash = data.get("tx_hash")
+        deposit_tx_hash = data.get("deposit_tx_hash") or deposit_tx_hash
+        settle_tx_hash = data.get("settle_tx_hash")
         seller_response = data.get("seller_response", {})
 
         # Step 3: Verify invariants (fail-closed)
@@ -319,6 +435,8 @@ class BuyerAgent:
             max_price=max_price_int,
             receipt_hash=receipt_hash,
             tx_hash=tx_hash,
+            deposit_tx_hash=deposit_tx_hash,
+            settle_tx_hash=settle_tx_hash,
             seller_response=seller_response,
             invariant_checks=checks,
             error=f"Invariant violations: {violations}" if violations else None,

@@ -279,8 +279,12 @@ async def seller_call(
     if _use_fallback():
         return await _fallback_response(mode)
 
-    # LLM path
-    return await _llm_response(mode)
+    # LLM path (fail-safe): unexpected errors must not break seller availability
+    try:
+        return await _llm_response(mode)
+    except Exception as e:
+        logger.exception("Unexpected LLM path error (mode=%s): %s", mode, e)
+        return await _fallback_response(mode if mode in ("fast", "slow", "invalid") else "invalid")
 
 
 async def _fallback_response(mode: str) -> JSONResponse:
@@ -317,10 +321,10 @@ async def _llm_response(mode: str) -> JSONResponse:
         return await _llm_invalid_response(client)
 
     # fast or slow (after delay): generate valid invoice
-    return await _llm_valid_response(client)
+    return await _llm_valid_response(client, mode=mode)
 
 
-async def _llm_valid_response(client: GeminiClient) -> JSONResponse:
+async def _llm_valid_response(client: GeminiClient, *, mode: str) -> JSONResponse:
     """Generate a schema-valid invoice via Gemini."""
     max_retries = 2
     last_error = ""
