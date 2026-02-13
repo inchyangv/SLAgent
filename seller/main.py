@@ -24,6 +24,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from seller.gemini_client import GeminiClient, GeminiError
@@ -32,6 +33,16 @@ from seller.json_extractor import JSONExtractionError, extract_json
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SLA-Pay v2 LLM Seller", version="0.3.0")
+
+# CORS — enabled by default so dashboard can call seller capabilities directly
+_DEMO_CORS = os.getenv("DEMO_CORS", "true").lower() == "true"
+if _DEMO_CORS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # ── Mandate store (in-memory) ───────────────────────────────────────────────
 _accepted_mandates: dict[str, dict] = {}

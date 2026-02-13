@@ -331,3 +331,41 @@ def test_call_deposit_event_recorded():
     ]
     assert len(deposit_events) >= 1
     assert deposit_events[0].data.get("amount") is not None
+
+
+# --- CORS tests (T-141) ---
+
+
+def test_cors_preflight_allowed():
+    """OPTIONS preflight to /v1/health returns CORS headers (demo mode)."""
+    resp = client.options(
+        "/v1/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "*"
+
+
+def test_cors_headers_on_api_response():
+    """GET /v1/health response includes CORS headers when Origin is sent."""
+    resp = client.get("/v1/health", headers={"Origin": "http://localhost:3000"})
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "*"
+
+
+def test_dashboard_static_mount_exists():
+    """Dashboard is served at /dashboard/ (same-origin access)."""
+    resp = client.get("/dashboard/console.html")
+    # Should serve the console.html file (200) or 404 if dashboard dir missing
+    assert resp.status_code == 200
+    assert "SLA-Pay" in resp.text
+
+
+def test_dashboard_index_served():
+    """Dashboard index.html is accessible at /dashboard/."""
+    resp = client.get("/dashboard/index.html")
+    assert resp.status_code == 200
+    assert "SLA-Pay" in resp.text

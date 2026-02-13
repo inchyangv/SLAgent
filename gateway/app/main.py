@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from gateway.app.config import settings
 from gateway.app.events import event_store
@@ -30,6 +34,16 @@ from gateway.app.x402 import create_402_response, verify_payment_header
 logger = logging.getLogger("sla-gateway")
 
 app = FastAPI(title="SLA-Pay v2 Gateway", version="0.2.0")
+
+# CORS — enabled in demo mode so dashboard can call API from any origin
+_DEMO_CORS = os.getenv("DEMO_CORS", "true").lower() == "true"
+if _DEMO_CORS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # A2A/AP2 protocol routes
 from gateway.app.a2a.routes import router as a2a_router
@@ -708,3 +722,11 @@ async def demo_run(request: Request) -> JSONResponse:
             "failed": len(results) - success_count,
         },
     })
+
+
+# --- Static file serving for dashboard (same-origin, no CORS needed) ---
+# Mount AFTER all API routes so /v1/* takes precedence.
+
+_dashboard_dir = Path(__file__).resolve().parent.parent.parent / "dashboard"
+if _dashboard_dir.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=str(_dashboard_dir), html=True), name="dashboard")
