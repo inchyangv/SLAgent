@@ -73,6 +73,30 @@
     <button class="primary" id="run-demo-btn" onclick="runDemo()">Run Demo</button>
 </div>
 
+<!-- Simulator Controls (T-144) -->
+<div class="card" style="margin-bottom:12px;padding:10px 14px">
+    <div class="row" style="flex-wrap:wrap;gap:12px">
+        <div>
+            <label>Latency Delay: <strong id="delay-val">0</strong>ms</label>
+            <input type="range" id="delay-slider" min="0" max="8000" step="100" value="0"
+                   style="width:180px;vertical-align:middle"
+                   oninput="document.getElementById('delay-val').textContent=this.value">
+        </div>
+        <div>
+            <label>Failure Toggles:</label>
+            <label style="display:inline;font-size:0.78rem"><input type="checkbox" id="toggle-schema-fail"> Schema Invalid</label>
+            <label style="display:inline;font-size:0.78rem;margin-left:8px"><input type="checkbox" id="toggle-upstream-error"> Upstream 5xx</label>
+            <label style="display:inline;font-size:0.78rem;margin-left:8px"><input type="checkbox" id="toggle-timeout"> Timeout</label>
+        </div>
+        <div>
+            <label>Quick Presets:</label>
+            <button style="font-size:0.72rem" onclick="setSimPreset('happy')">Happy Path</button>
+            <button style="font-size:0.72rem" onclick="setSimPreset('slow')">Slow SLA</button>
+            <button style="font-size:0.72rem" onclick="setSimPreset('breach')">All Breaches</button>
+        </div>
+    </div>
+</div>
+
 <!-- Stats -->
 <div class="stats" id="stats">
     <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Requests</div></div>
@@ -201,6 +225,51 @@
         const ts = new Date().toLocaleTimeString();
         log.innerHTML += `<div class="log-entry ${cls}">[${ts}] ${msg}</div>`;
         log.scrollTop = log.scrollHeight;
+    }
+
+    // ── Simulator Presets (T-144) ──
+    function setSimPreset(preset) {
+        const slider = document.getElementById('delay-slider');
+        const schemaFail = document.getElementById('toggle-schema-fail');
+        const upstreamErr = document.getElementById('toggle-upstream-error');
+        const timeout = document.getElementById('toggle-timeout');
+        schemaFail.checked = false; upstreamErr.checked = false; timeout.checked = false;
+        if (preset === 'happy') {
+            slider.value = 0;
+        } else if (preset === 'slow') {
+            slider.value = 4000;
+        } else if (preset === 'breach') {
+            slider.value = 6000;
+            schemaFail.checked = true;
+            upstreamErr.checked = true;
+        }
+        document.getElementById('delay-val').textContent = slider.value;
+        addLog(`Simulator preset: ${preset} (delay=${slider.value}ms)`, 'info');
+    }
+
+    function getSimSettings() {
+        return {
+            delay_ms: parseInt(document.getElementById('delay-slider').value) || 0,
+            force_schema_fail: document.getElementById('toggle-schema-fail').checked,
+            force_upstream_error: document.getElementById('toggle-upstream-error').checked,
+            force_timeout: document.getElementById('toggle-timeout').checked,
+        };
+    }
+
+    function buildModesFromSim() {
+        const sim = getSimSettings();
+        const modes = [];
+        // Always include a "normal" scenario (with delay applied)
+        modes.push('fast');
+        if (sim.force_schema_fail) modes.push('invalid');
+        if (sim.force_upstream_error) modes.push('error');
+        if (sim.force_timeout) modes.push('timeout');
+        // If no failures selected, add slow variant
+        if (!sim.force_schema_fail && !sim.force_upstream_error && !sim.force_timeout) {
+            modes.push('slow');
+            modes.push('invalid');
+        }
+        return modes;
     }
 
     // ── SLA Offer Catalog ──
@@ -507,12 +576,14 @@
         const btn = document.getElementById('run-demo-btn');
         btn.disabled = true;
         btn.textContent = 'Running...';
-        addLog('Starting demo run (server-side)...');
+        const sim = getSimSettings();
+        const modes = buildModesFromSim();
+        addLog(`Starting demo run — delay=${sim.delay_ms}ms modes=[${modes.join(',')}]`);
         try {
             const resp = await fetch(`${gw()}/v1/demo/run`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({modes: ['fast','slow','invalid'], seller_url: sl()}),
+                body: JSON.stringify({modes, seller_url: sl(), delay_ms: sim.delay_ms, simulator: sim}),
             });
             if (!resp.ok) {
                 const err = await resp.json();
@@ -541,7 +612,7 @@
     const KIND_COLORS = {
         'payment': '#4a9eff', 'negotiation': '#9c27b0', 'execution': '#ff9800',
         'validation': '#4caf50', 'pricing': '#2196f3', 'receipt': '#607d8b',
-        'chain': '#ff5722', 'attestation': '#8bc34a', 'sla': '#f44336',
+        'chain': '#ff5722', 'attestation': '#8bc34a', 'sla': '#f44336', 'simulator': '#e91e63',
     };
 
     async function fetchTimeline(mode) {

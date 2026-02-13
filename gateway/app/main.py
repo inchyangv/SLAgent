@@ -688,6 +688,18 @@ async def demo_run(request: Request) -> JSONResponse:
     body = await request.json()
     modes = body.get("modes", ["fast", "slow", "invalid"])
     seller_url = body.get("seller_url", settings.seller_upstream_url)
+    sim_delay_ms = int(body.get("delay_ms", 0))
+    simulator = body.get("simulator", {})
+
+    # Record simulator settings event
+    event_store.record(
+        kind="simulator.settings_applied", actor="gateway",
+        data={
+            "modes": modes,
+            "delay_ms": sim_delay_ms,
+            "simulator": simulator,
+        },
+    )
 
     buyer_key = _os.getenv("BUYER_PRIVATE_KEY")
     buyer_addr = _os.getenv("BUYER_ADDRESS", "0xDEMO_BUYER")
@@ -719,11 +731,11 @@ async def demo_run(request: Request) -> JSONResponse:
     except Exception as e:
         steps.append({"step": "negotiate", "ok": False, "error": str(e)})
 
-    # Step 2: Execute scenarios
+    # Step 2: Execute scenarios with simulator delay
     results: list[dict] = []
     for mode in modes:
         try:
-            result = await agent.call(mode=mode)
+            result = await agent.call(mode=mode, delay_ms=sim_delay_ms)
             attest = result.attestation_status.get("status", {})
             results.append({
                 "mode": mode,
@@ -735,6 +747,7 @@ async def demo_run(request: Request) -> JSONResponse:
                 "receipt_hash": result.receipt_hash,
                 "tx_hash": result.tx_hash,
                 "latency_ms": result.metrics.get("latency_ms"),
+                "delay_ms_applied": sim_delay_ms,
                 "attestations": {
                     "count": attest.get("count", 0),
                     "complete": attest.get("complete", False),
@@ -759,6 +772,7 @@ async def demo_run(request: Request) -> JSONResponse:
             "success": success_count,
             "failed": len(results) - success_count,
         },
+        "simulator": {"delay_ms": sim_delay_ms, "modes": modes},
     })
 
 

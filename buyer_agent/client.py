@@ -185,11 +185,12 @@ class BuyerAgent:
         })
         return {"X-PAYMENT": header_val}
 
-    async def call(self, mode: str = "fast") -> BuyerResult:
+    async def call(self, mode: str = "fast", delay_ms: int = 0) -> BuyerResult:
         """Execute the full buyer flow: 402 challenge → paid request → verify.
 
         Args:
-            mode: Seller mode (fast, slow, invalid)
+            mode: Seller mode (fast, slow, invalid, error, timeout)
+            delay_ms: Additional delay in ms applied by seller (simulator control)
 
         Returns:
             BuyerResult with all details.
@@ -198,12 +199,15 @@ class BuyerAgent:
             InvariantViolation: If receipt invariants fail (fail-closed behavior).
         """
         max_price_int = int(self.max_price)
+        call_body: dict = {"mode": mode}
+        if delay_ms > 0:
+            call_body["delay_ms"] = delay_ms
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             # Step 1: Unpaid request → expect 402
             resp_402 = await client.post(
                 f"{self.gateway_url}/v1/call",
-                json={"mode": mode},
+                json=call_body,
             )
 
             if resp_402.status_code != 402:
@@ -225,9 +229,12 @@ class BuyerAgent:
 
             # Step 2: Paid request
             headers = self._make_payment_header()
+            query_params = f"mode={mode}"
+            if delay_ms > 0:
+                query_params += f"&delay_ms={delay_ms}"
             resp = await client.post(
-                f"{self.gateway_url}/v1/call?mode={mode}",
-                json={"mode": mode},
+                f"{self.gateway_url}/v1/call?{query_params}",
+                json=call_body,
                 headers=headers,
             )
 
