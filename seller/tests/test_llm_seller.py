@@ -278,6 +278,36 @@ def test_mode_from_body(mock_client):
     assert "invoice_id" in resp.json()
 
 
+# ── Simulation modes ─────────────────────────────────────────────────────────
+
+
+def test_error_mode(mock_client):
+    """Error mode returns 500."""
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/call?mode=error")
+    assert resp.status_code == 500
+    assert "Simulated" in resp.json()["error"]
+
+
+def test_delay_ms_param(mock_client):
+    """delay_ms adds extra delay (fast mode, small delay for test)."""
+    import time
+    start = time.time()
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/call?mode=fast&delay_ms=50")
+    elapsed = time.time() - start
+    assert resp.status_code == 200
+    # Should take at least ~50ms
+    assert elapsed >= 0.04
+
+
+def test_delay_ms_from_body(mock_client):
+    """delay_ms can come from body."""
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/call", json={"mode": "fast", "delay_ms": 10})
+    assert resp.status_code == 200
+
+
 # ── Seller attestation tests ─────────────────────────────────────────────────
 
 

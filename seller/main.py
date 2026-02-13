@@ -137,7 +137,7 @@ async def capabilities() -> JSONResponse:
         "llm_model": gemini_model,
         "llm_available": has_key,
         "supported_schemas": ["invoice_v1"],
-        "supported_modes": ["fast", "slow", "invalid"],
+        "supported_modes": ["fast", "slow", "invalid", "error", "timeout"],
         "endpoints": {
             "call": "POST /seller/call?mode=fast|slow|invalid",
             "capabilities": "GET /seller/capabilities",
@@ -199,27 +199,46 @@ async def list_mandates() -> JSONResponse:
 
 
 @app.post("/seller/call")
-async def seller_call(request: Request, mode: str = Query(default="fast")) -> JSONResponse:
+async def seller_call(
+    request: Request,
+    mode: str = Query(default="fast"),
+    delay_ms: int = Query(default=0),
+) -> JSONResponse:
     """LLM-powered seller endpoint.
 
     Mode can come from query param or body field. Query param takes precedence.
     Args:
-        mode: One of 'fast', 'slow', 'invalid'
+        mode: One of 'fast', 'slow', 'invalid', 'error', 'timeout'
+        delay_ms: Additional delay in ms (0 = use mode default)
     """
-    # Also accept mode from body (for gateway forwarding compatibility)
-    if mode == "fast":
-        try:
-            body = await request.json()
-            if isinstance(body, dict) and "mode" in body:
+    # Also accept mode/delay_ms from body (for gateway forwarding compatibility)
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            if mode == "fast" and "mode" in body:
                 mode = body["mode"]
-        except Exception:
-            pass
+            if delay_ms == 0 and "delay_ms" in body:
+                delay_ms = int(body["delay_ms"])
+    except Exception:
+        pass
 
-    if mode not in ("fast", "slow", "invalid"):
+    if mode not in ("fast", "slow", "invalid", "error", "timeout"):
         return JSONResponse(
             status_code=400,
-            content={"error": f"Unknown mode: {mode}. Use fast, slow, or invalid."},
+            content={"error": f"Unknown mode: {mode}. Use fast, slow, invalid, error, or timeout."},
         )
+
+    # Apply custom delay if specified
+    if delay_ms > 0:
+        await asyncio.sleep(delay_ms / 1000.0)
+
+    # Simulation modes: error and timeout
+    if mode == "error":
+        return JSONResponse(status_code=500, content={"error": "Simulated upstream error"})
+
+    if mode == "timeout":
+        await asyncio.sleep(15.0)  # Exceed typical timeout
+        return JSONResponse(content={"error": "Should have timed out"})
 
     # Fallback path: deterministic responses when Gemini is unavailable
     if _use_fallback():

@@ -148,15 +148,16 @@ async def call_endpoint(request: Request) -> JSONResponse:
     rm = RequestMetrics()
     rm.start()
 
-    # Extract mode from query or body (default: fast)
+    # Extract mode and delay_ms from query or body (default: fast, 0)
     mode = request.query_params.get("mode") or payload.get("mode", "fast")
+    delay_ms = request.query_params.get("delay_ms") or payload.get("delay_ms", 0)
 
-    # Forward to seller with mode as query param + body
-    seller_payload = {**payload, "mode": mode}
+    # Forward to seller with mode + delay_ms as query param + body
+    seller_payload = {**payload, "mode": mode, "delay_ms": int(delay_ms)}
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             seller_resp = await client.post(
-                f"{settings.seller_upstream_url}/seller/call?mode={mode}",
+                f"{settings.seller_upstream_url}/seller/call?mode={mode}&delay_ms={int(delay_ms)}",
                 json=seller_payload,
             )
             rm.mark_first_token()
