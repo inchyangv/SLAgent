@@ -501,3 +501,99 @@ async def attest_receipt(request_id: str, request: Request) -> JSONResponse:
 async def get_attestations(request_id: str) -> JSONResponse:
     """Get all attestations for a receipt."""
     return JSONResponse(content=attestation_store.get_attestations(request_id))
+
+
+# --- Demo Run API (server-side buyer agent orchestration) ---
+
+import os as _os
+
+_DEMO_MODE = _os.getenv("DEMO_MODE", "true").lower() == "true"
+
+
+@app.post("/v1/demo/run")
+async def demo_run(request: Request) -> JSONResponse:
+    """Run buyer agent flow server-side (demo only).
+
+    Body: { "modes": ["fast","slow","invalid"], "seller_url": "..." }
+    Returns: { "results": [...], "summary": {...} }
+
+    Only available when DEMO_MODE=true (default for local dev).
+    """
+    if not _DEMO_MODE:
+        raise HTTPException(status_code=403, detail="Demo mode is disabled")
+
+    body = await request.json()
+    modes = body.get("modes", ["fast", "slow", "invalid"])
+    seller_url = body.get("seller_url", settings.seller_upstream_url)
+
+    buyer_key = _os.getenv("BUYER_PRIVATE_KEY")
+    buyer_addr = _os.getenv("BUYER_ADDRESS", "0xDEMO_BUYER")
+
+    try:
+        from buyer_agent.client import BuyerAgent, InvariantViolation
+    except ImportError:
+        raise HTTPException(status_code=500, detail="buyer_agent module not available")
+
+    agent = BuyerAgent(
+        gateway_url=f"http://127.0.0.1:{settings.port}",
+        seller_url=seller_url,
+        buyer_address=buyer_addr,
+        buyer_private_key=buyer_key,
+    )
+
+    steps: list[dict] = []
+
+    # Step 1: Negotiate
+    try:
+        neg = await agent.negotiate_mandate()
+        steps.append({
+            "step": "negotiate",
+            "ok": True,
+            "mandate_id": neg.mandate_id,
+            "seller_accepted": neg.seller_accepted,
+            "summary": neg.summary,
+        })
+    except Exception as e:
+        steps.append({"step": "negotiate", "ok": False, "error": str(e)})
+
+    # Step 2: Execute scenarios
+    results: list[dict] = []
+    for mode in modes:
+        try:
+            result = await agent.call(mode=mode)
+            attest = result.attestation_status.get("status", {})
+            results.append({
+                "mode": mode,
+                "ok": result.success,
+                "request_id": result.request_id,
+                "payout": result.payout,
+                "refund": result.refund,
+                "validation_passed": result.validation_passed,
+                "receipt_hash": result.receipt_hash,
+                "tx_hash": result.tx_hash,
+                "latency_ms": result.metrics.get("latency_ms"),
+                "attestations": {
+                    "count": attest.get("count", 0),
+                    "complete": attest.get("complete", False),
+                    "parties": attest.get("parties_signed", []),
+                },
+            })
+            steps.append({"step": f"call:{mode}", "ok": True, "request_id": result.request_id})
+        except InvariantViolation as e:
+            steps.append({"step": f"call:{mode}", "ok": False, "error": str(e)})
+            results.append({"mode": mode, "ok": False, "error": str(e)})
+        except Exception as e:
+            steps.append({"step": f"call:{mode}", "ok": False, "error": str(e)})
+            results.append({"mode": mode, "ok": False, "error": str(e)})
+
+    success_count = sum(1 for r in results if r.get("ok"))
+
+    return JSONResponse(content={
+        "steps": steps,
+        "results": results,
+        "summary": {
+            "total": len(results),
+            "success": success_count,
+            "failed": len(results) - success_count,
+        },
+    })

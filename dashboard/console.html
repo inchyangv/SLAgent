@@ -70,6 +70,7 @@
     <label style="display:inline;margin:0">Seller:</label>
     <input id="seller-url" value="http://localhost:8001" style="width:240px">
     <button onclick="refreshAll()">Refresh All</button>
+    <button class="primary" id="run-demo-btn" onclick="runDemo()">Run Demo</button>
 </div>
 
 <!-- Stats -->
@@ -381,6 +382,40 @@
             fetchMandates(),
             fetchReceipts(),
         ]);
+    }
+
+    // ── Demo Run API ──
+    async function runDemo() {
+        const btn = document.getElementById('run-demo-btn');
+        btn.disabled = true;
+        btn.textContent = 'Running...';
+        addLog('Starting demo run (server-side)...');
+        try {
+            const resp = await fetch(`${gw()}/v1/demo/run`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({modes: ['fast','slow','invalid'], seller_url: sl()}),
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                addLog(`Demo run failed: ${err.detail || resp.statusText}`, 'err');
+                return;
+            }
+            const data = await resp.json();
+            const s = data.summary || {};
+            addLog(`Demo complete: ${s.success}/${s.total} passed`, s.failed > 0 ? 'err' : 'ok');
+            for (const step of data.steps || []) {
+                addLog(`  ${step.step}: ${step.ok ? 'OK' : 'FAIL'} ${step.error || step.request_id || ''}`, step.ok ? 'ok' : 'err');
+            }
+            // Refresh receipts to show new data
+            await fetchReceipts();
+            await fetchMandates();
+        } catch (e) {
+            addLog(`Demo error: ${e.message}`, 'err');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Run Demo';
+        }
     }
 
     // Auto-fetch on load

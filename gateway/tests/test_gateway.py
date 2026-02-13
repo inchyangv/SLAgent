@@ -236,6 +236,13 @@ def test_call_forwards_mode_to_seller():
     assert "mode=slow" in captured_url[0]
 
 
+def test_demo_run_endpoint_exists():
+    """POST /v1/demo/run is accessible when DEMO_MODE=true."""
+    resp = client.post("/v1/demo/run", json={"modes": ["fast"]})
+    # Endpoint exists (not 404/405) and demo mode is enabled (not 403)
+    assert resp.status_code not in (404, 405, 403)
+
+
 def test_call_mode_from_body():
     """Test mode can come from request body."""
     seller_response = {"invoice_id": "INV-B", "amount": 50, "currency": "EUR",
