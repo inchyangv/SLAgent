@@ -24,6 +24,9 @@ contracts/broadcast/
 .env
 .env.local
 
+# Local data (runtime DB / exports)
+data/
+
 # IDE
 .idea/
 .vscode/

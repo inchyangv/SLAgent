@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SLA-Pay v2 Dashboard</title>
+    <title>SLAgent-402 Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; background: #0a0a0a; color: #e0e0e0; padding: 20px; }
-        h1 { font-size: 1.5rem; margin-bottom: 8px; color: #fff; }
-        .subtitle { color: #888; margin-bottom: 24px; font-size: 0.9rem; }
+        .app-header { margin-bottom: 24px; }
+        .brand-logo { width: min(420px, 100%); height: auto; display: block; }
+        .subtitle { color: #888; margin-top: 10px; font-size: 0.9rem; }
         .controls { margin-bottom: 20px; display: flex; gap: 8px; align-items: center; }
         button { background: #1a1a2e; border: 1px solid #333; color: #e0e0e0; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 0.85rem; }
         button:hover { background: #16213e; border-color: #555; }
@@ -40,7 +41,9 @@
     </style>
 </head>
 <body>
-    <h1>SLA-Pay v2 Dashboard</h1>
+    <header class="app-header">
+        <img class="brand-logo" src="./assets/slagent-402-logo.svg" alt="SLAgent-402 logo">
+    </header>
     <p class="subtitle">Pay by proof, not upfront — Real-time receipt ledger</p>
 
     <div class="stats" id="stats">

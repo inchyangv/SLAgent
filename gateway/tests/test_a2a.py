@@ -56,7 +56,7 @@ def test_mandate_request_envelope():
         receiver="gateway",
         mandate={"max_price": "100000"},
     )
-    assert msg["message_type"] == "sla-pay.mandate.request"
+    assert msg["message_type"] == "slagent-402.mandate.request"
     assert msg["payload"]["mandate"]["max_price"] == "100000"
 
 
@@ -68,7 +68,7 @@ def test_mandate_response_envelope():
         accepted=True,
         mandate_id="0xabc",
     )
-    assert msg["message_type"] == "sla-pay.mandate.response"
+    assert msg["message_type"] == "slagent-402.mandate.response"
     assert msg["payload"]["accepted"] is True
 
 
@@ -78,7 +78,7 @@ def test_receipt_submission_envelope():
         receiver="buyer",
         receipt={"request_id": "req_001"},
     )
-    assert msg["message_type"] == "sla-pay.receipt.submission"
+    assert msg["message_type"] == "slagent-402.receipt.submission"
 
 
 def test_receipt_ack_envelope():
@@ -89,7 +89,7 @@ def test_receipt_ack_envelope():
         accepted=True,
         request_id="req_001",
     )
-    assert msg["message_type"] == "sla-pay.receipt.ack"
+    assert msg["message_type"] == "slagent-402.receipt.ack"
 
 
 def test_dispute_open_envelope():
@@ -99,7 +99,7 @@ def test_dispute_open_envelope():
         request_id="req_001",
         reason="Payout incorrect",
     )
-    assert msg["message_type"] == "sla-pay.dispute.open"
+    assert msg["message_type"] == "slagent-402.dispute.open"
 
 
 # ── A2A Endpoint Tests ───────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ def test_a2a_mandate_request():
     resp = client.post("/a2a/message", json=msg)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["message_type"] == "sla-pay.mandate.response"
+    assert data["message_type"] == "slagent-402.mandate.response"
     assert data["payload"]["accepted"] is True
 
 
@@ -127,7 +127,7 @@ def test_a2a_dispute_open():
     resp = client.post("/a2a/message", json=msg)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["message_type"] == "sla-pay.dispute.opened"
+    assert data["message_type"] == "slagent-402.dispute.opened"
     assert data["payload"]["status"] == "DISPUTED"
 
 
@@ -141,4 +141,4 @@ def test_a2a_unknown_type():
     resp = client.post("/a2a/message", json=msg)
     assert resp.status_code == 400
     data = resp.json()
-    assert data["message_type"] == "sla-pay.error"
+    assert data["message_type"] == "slagent-402.error"

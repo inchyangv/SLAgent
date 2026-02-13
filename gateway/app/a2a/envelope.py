@@ -1,7 +1,7 @@
 """Google A2A/AP2 protocol message envelope layer.
 
 Defines message types and translation between:
-- SLA-Pay internal REST JSON format
+- SLAgent-402 internal REST JSON format
 - A2A protocol envelope format (agent-to-agent messaging)
 
 Message Types:
@@ -10,7 +10,7 @@ Message Types:
 - DisputeOpen / DisputeResolve
 
 This implements a minimal A2A-compatible message framing so that
-SLA-Pay mandates and receipts can be exchanged as structured protocol messages
+SLAgent-402 mandates and receipts can be exchanged as structured protocol messages
 rather than raw REST JSON.
 """
 
@@ -78,7 +78,7 @@ def mandate_request(
 ) -> dict[str, Any]:
     """Create a MandateRequest message (buyer → seller/gateway)."""
     return create_envelope(
-        message_type="sla-pay.mandate.request",
+        message_type="slagent-402.mandate.request",
         sender=sender,
         receiver=receiver,
         payload={"mandate": mandate},
@@ -95,7 +95,7 @@ def mandate_response(
 ) -> dict[str, Any]:
     """Create a MandateResponse message (seller/gateway → buyer)."""
     return create_envelope(
-        message_type="sla-pay.mandate.response",
+        message_type="slagent-402.mandate.response",
         sender=sender,
         receiver=receiver,
         correlation_id=correlation_id,
@@ -111,7 +111,7 @@ def receipt_submission(
 ) -> dict[str, Any]:
     """Create a ReceiptSubmission message (gateway → buyer/seller)."""
     return create_envelope(
-        message_type="sla-pay.receipt.submission",
+        message_type="slagent-402.receipt.submission",
         sender=sender,
         receiver=receiver,
         payload={"receipt": receipt},
@@ -128,7 +128,7 @@ def receipt_ack(
 ) -> dict[str, Any]:
     """Create a ReceiptAck message (buyer → gateway)."""
     return create_envelope(
-        message_type="sla-pay.receipt.ack",
+        message_type="slagent-402.receipt.ack",
         sender=sender,
         receiver=receiver,
         correlation_id=correlation_id,
@@ -145,7 +145,7 @@ def dispute_open_msg(
 ) -> dict[str, Any]:
     """Create a DisputeOpen message."""
     return create_envelope(
-        message_type="sla-pay.dispute.open",
+        message_type="slagent-402.dispute.open",
         sender=sender,
         receiver=receiver,
         payload={"request_id": request_id, "reason": reason},
@@ -162,7 +162,7 @@ def dispute_resolve_msg(
 ) -> dict[str, Any]:
     """Create a DisputeResolve message."""
     return create_envelope(
-        message_type="sla-pay.dispute.resolve",
+        message_type="slagent-402.dispute.resolve",
         sender=sender,
         receiver=receiver,
         correlation_id=correlation_id,

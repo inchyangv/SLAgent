@@ -1,7 +1,7 @@
-"""ERC-8004 orchestration adapter for SLA-Pay gateway.
+"""ERC-8004 orchestration adapter for SLAgent-402 gateway.
 
 Provides a Python interface for interacting with the SLAOrchestrator contract,
-which maps SLA-Pay settlement lifecycle events to ERC-8004 registries:
+which maps SLAgent-402 settlement lifecycle events to ERC-8004 registries:
   - Identity Registry: agent registration
   - Validation Registry: receipt verification tracking
   - Reputation Registry: post-settlement feedback

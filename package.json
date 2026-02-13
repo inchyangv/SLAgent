@@ -1,8 +1,8 @@
 {
-  "name": "sla-pay-v2",
+  "name": "slagent-402",
   "version": "0.1.0",
   "private": true,
-  "description": "SLA-Pay v2 — Pay by proof, not upfront",
+  "description": "SLAgent-402 — Pay by proof, not upfront",
   "scripts": {
     "dashboard:dev": "cd dashboard && npx next dev",
     "dashboard:build": "cd dashboard && npx next build"

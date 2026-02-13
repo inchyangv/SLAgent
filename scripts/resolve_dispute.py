@@ -60,7 +60,7 @@ def check_status(gateway_url: str, request_id: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SLA-Pay v2 Dispute Resolver CLI")
+    parser = argparse.ArgumentParser(description="SLAgent-402 Dispute Resolver CLI")
     parser.add_argument("--gateway-url", default="http://localhost:8000", help="Gateway URL")
 
     subparsers = parser.add_subparsers(dest="command", required=True)

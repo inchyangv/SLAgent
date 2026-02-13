@@ -3,10 +3,10 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["gateway*", "facilitator*", "seller*", "buyer_agent*"]
+include = ["gateway*", "facilitator*", "seller*", "buyer_agent*", "shared*"]
 
 [project]
-name = "sla-pay-v2"
+name = "slagent-402"
 version = "0.1.0"
 description = "Pay-by-performance settlement layer for agent-to-agent API calls"
 requires-python = ">=3.11"

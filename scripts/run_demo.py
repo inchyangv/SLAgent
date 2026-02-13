@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SLA-Pay v2 End-to-End Demo Script.
+"""SLAgent-402 End-to-End Demo Script.
 
 Runs three scenarios against the gateway:
 1. Fast + valid   → full payout ($0.10)
@@ -26,8 +26,13 @@ import time
 
 import httpx
 
+from shared.env import bootstrap_env
+
 from gateway.app.demo_keys import inject_demo_env
 from gateway.app.x402 import create_payment_token, create_x402_payment
+
+# Load repo-root .env, then inject demo keys (if configured).
+bootstrap_env()
 
 # Inject demo keys before anything reads env vars
 inject_demo_env()
@@ -64,9 +69,9 @@ def make_payment_header(path: str = "/v1/call") -> dict[str, str]:
         if not buyer_private_key:
             raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
 
-        # Default to SKALE hackathon chain (BITE v2 Sandbox 2) unless overridden.
+        # Default to SKALE Base Sepolia (BITE v2 Sandbox 2) unless overridden.
         chain_id = int(os.getenv("CHAIN_ID", "103698795"))
-        # Default to predeployed USDC on the hackathon chain if not provided.
+        # Default to USDC on SKALE Base Sepolia (BITE v2 Sandbox 2) if not provided.
         asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "") or "0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"
         token_name = os.getenv("SLA_TOKEN_NAME", "USDC")
         token_version = os.getenv("SLA_TOKEN_VERSION", "")
@@ -247,7 +252,7 @@ def submit_attestations(client: httpx.Client, request_id: str, receipt_hash: str
 
 def main() -> None:
     print("=" * 60)
-    print("  SLA-Pay v2 — End-to-End Demo")
+    print("  SLAgent-402 — End-to-End Demo")
     print("  Pay by proof, not upfront.")
     print("=" * 60)
 

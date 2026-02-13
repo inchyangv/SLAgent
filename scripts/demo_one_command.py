@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SLA-Pay v2 — One-Command Demo Orchestration.
+"""SLAgent-402 — One-Command Demo Orchestration.
 
 Starts all services, runs the full demo flow, and shuts down cleanly.
 
@@ -73,7 +73,7 @@ def wait_for_health(url: str, name: str, timeout: int = 15) -> bool:
 
 def main() -> int:
     print("=" * 64)
-    print("  SLA-Pay v2 — One-Command Demo")
+    print("  SLAgent-402 — One-Command Demo")
     print("  Pay by proof, not upfront.")
     print("=" * 64)
 

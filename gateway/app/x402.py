@@ -32,12 +32,12 @@ logger = logging.getLogger("sla-gateway.x402")
 # ── Configuration ────────────────────────────────────────────────────────────
 
 PAYMENT_MODE = os.getenv("PAYMENT_MODE", "hmac")  # "hmac" or "x402"
-PAYMENT_SECRET = "sla-pay-v2-demo-secret"  # HMAC mode only
+PAYMENT_SECRET = "slagent-402-demo-secret"  # HMAC mode only
 
 def _token_domain() -> tuple[str, str]:
     """Return (name, version) for the EIP-712 domain.
 
-    Note: For the predeployed USDC on SKALE BITE v2 Sandbox 2:
+    Note: For USDC on SKALE Base Sepolia (BITE v2 Sandbox 2):
     - name() == "USDC"
     - version() == "" (empty string)
     """
@@ -67,14 +67,14 @@ def create_402_response(
         "network": f"eip155:{chain_id}",
         "maxAmountRequired": max_price,
         "resource": settlement_contract,
-        "description": "SLA-Pay v2 — pay max_price, receive performance-based refund",
+        "description": "SLAgent-402 — pay max_price, receive performance-based refund",
         "payTo": seller,
         "asset": payment_token_address,
         "maxTimeoutSeconds": 300,
         "extra": {
             "name": token_name,
             "version": token_version,
-            "protocol": "sla-pay-v2",
+            "protocol": "slagent-402",
         },
     }
 

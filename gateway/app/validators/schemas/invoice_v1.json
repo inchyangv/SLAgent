@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Invoice V1",
-  "description": "Demo invoice schema for SLA-Pay v2 validation",
+  "description": "Demo invoice schema for SLAgent-402 validation",
   "type": "object",
   "required": ["invoice_id", "amount", "currency", "line_items"],
   "properties": {

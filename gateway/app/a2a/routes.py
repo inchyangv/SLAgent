@@ -36,20 +36,20 @@ async def handle_a2a_message(request: Request) -> JSONResponse:
     sender = body.get("sender", "unknown")
     receiver = body.get("receiver", "gateway")
 
-    if msg_type == "sla-pay.mandate.request":
+    if msg_type == "slagent-402.mandate.request":
         return _handle_mandate_request(sender, payload, correlation_id)
 
-    elif msg_type == "sla-pay.receipt.ack":
+    elif msg_type == "slagent-402.receipt.ack":
         return _handle_receipt_ack(sender, payload, correlation_id)
 
-    elif msg_type == "sla-pay.dispute.open":
+    elif msg_type == "slagent-402.dispute.open":
         return _handle_dispute_open(sender, payload, correlation_id)
 
     else:
         return JSONResponse(
             status_code=400,
             content=create_envelope(
-                message_type="sla-pay.error",
+                message_type="slagent-402.error",
                 sender="gateway",
                 receiver=sender,
                 correlation_id=correlation_id,
@@ -87,7 +87,7 @@ def _handle_receipt_ack(
     logger.info(f"A2A receipt ack from {sender}: req={request_id} accepted={accepted}")
 
     return JSONResponse(content=create_envelope(
-        message_type="sla-pay.receipt.ack.confirmed",
+        message_type="slagent-402.receipt.ack.confirmed",
         sender="gateway",
         receiver=sender,
         correlation_id=correlation_id,
@@ -105,7 +105,7 @@ def _handle_dispute_open(
     logger.info(f"A2A dispute open from {sender}: req={request_id} reason={reason}")
 
     return JSONResponse(content=create_envelope(
-        message_type="sla-pay.dispute.opened",
+        message_type="slagent-402.dispute.opened",
         sender="gateway",
         receiver=sender,
         correlation_id=correlation_id,

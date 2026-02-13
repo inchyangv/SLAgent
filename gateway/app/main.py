@@ -1,4 +1,4 @@
-"""SLA-Pay v2 Gateway — FastAPI reverse proxy with metrics, validation, pricing, x402."""
+"""SLAgent-402 Gateway — FastAPI reverse proxy with metrics, validation, pricing, x402."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from gateway.app.x402 import create_402_response, verify_payment_header
 
 logger = logging.getLogger("sla-gateway")
 
-app = FastAPI(title="SLA-Pay v2 Gateway", version="0.2.0")
+app = FastAPI(title="SLAgent-402 Gateway", version="0.2.0")
 
 # CORS — enabled in demo mode so dashboard can call API from any origin
 _DEMO_CORS = os.getenv("DEMO_CORS", "true").lower() == "true"

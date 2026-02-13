@@ -1,6 +1,6 @@
 """Buyer agent HTTP client — handles 402 challenge and paid request flow.
 
-This module encapsulates the autonomous buyer's interaction with the SLA-Pay gateway:
+This module encapsulates the autonomous buyer's interaction with the SLAgent-402 gateway:
 1. Discover seller capabilities
 2. Negotiate mandate (construct + submit for seller acceptance)
 3. Send unpaid request → receive 402 with payment details
@@ -79,7 +79,7 @@ class InvariantViolation(Exception):
 
 
 class BuyerAgent:
-    """Autonomous buyer agent that interacts with SLA-Pay gateway."""
+    """Autonomous buyer agent that interacts with SLAgent-402 gateway."""
 
     def __init__(
         self,

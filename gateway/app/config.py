@@ -6,6 +6,11 @@ auto-derived before reading settings (see demo_keys module).
 
 import os
 
+# Load repo-root .env first, then inject demo-derived role keys.
+from shared.env import bootstrap_env
+
+bootstrap_env()
+
 # Inject demo-derived keys before reading config
 from gateway.app.demo_keys import inject_demo_env
 
@@ -23,7 +28,10 @@ class Settings:
         "https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox",
     )
     settlement_contract: str = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
-    payment_token: str = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
+    payment_token: str = os.getenv(
+        "PAYMENT_TOKEN_ADDRESS",
+        "0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8",  # USDC (predeployed)
+    )
     gateway_private_key: str = os.getenv("GATEWAY_PRIVATE_KEY", "")
     host: str = os.getenv("GATEWAY_HOST", "0.0.0.0")
     port: int = int(os.getenv("GATEWAY_PORT", "8000"))

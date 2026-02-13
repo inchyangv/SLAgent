@@ -361,14 +361,14 @@ def test_dashboard_static_mount_exists():
     resp = client.get("/dashboard/console.html")
     # Should serve the console.html file (200) or 404 if dashboard dir missing
     assert resp.status_code == 200
-    assert "SLA-Pay" in resp.text
+    assert "SLAgent-402" in resp.text
 
 
 def test_dashboard_index_served():
     """Dashboard index.html is accessible at /dashboard/."""
     resp = client.get("/dashboard/index.html")
     assert resp.status_code == 200
-    assert "SLA-Pay" in resp.text
+    assert "SLAgent-402" in resp.text
 
 
 # --- Offer Catalog tests (T-143) ---

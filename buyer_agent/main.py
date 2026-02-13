@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SLA-Pay v2 Buyer Agent — autonomous buyer CLI.
+"""SLAgent-402 Buyer Agent — autonomous buyer CLI.
 
 Demonstrates an agentic commerce flow:
 1. Decides which scenarios to run
@@ -27,8 +27,10 @@ import httpx
 
 from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation, NegotiationResult
 from gateway.app.demo_keys import inject_demo_env
+from shared.env import bootstrap_env
 
-# Inject demo keys before anything reads env vars
+# Load repo-root .env, then inject demo keys (if configured).
+bootstrap_env()
 inject_demo_env()
 
 
@@ -41,7 +43,7 @@ SCENARIOS = [
 
 def print_header() -> None:
     print("=" * 64)
-    print("  SLA-Pay v2 — Autonomous Buyer Agent")
+    print("  SLAgent-402 — Autonomous Buyer Agent")
     print("  Verifying receipts. Refusing bad deals.")
     print("=" * 64)
 
@@ -61,8 +63,8 @@ def print_result(scenario: dict, result: BuyerResult) -> None:
     print(f"  latency_ms:        {result.metrics.get('latency_ms', '-')}")
     print(f"  ttft_ms:           {result.metrics.get('ttft_ms', '-')}")
     print(f"  validation_passed: {result.validation_passed}")
-    print(f"  payout:            {result.payout:>8} ({result.payout / 1_000_000:.6f} SLAT)")
-    print(f"  refund:            {result.refund:>8} ({result.refund / 1_000_000:.6f} SLAT)")
+    print(f"  payout:            {result.payout:>8} ({result.payout / 1_000_000:.6f} USDC)")
+    print(f"  refund:            {result.refund:>8} ({result.refund / 1_000_000:.6f} USDC)")
     print(f"  receipt_hash:      {result.receipt_hash[:24]}...")
     print(f"  tx_hash:           {result.tx_hash or 'mock (no chain)'}")
 
@@ -215,7 +217,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SLA-Pay v2 Buyer Agent")
+    parser = argparse.ArgumentParser(description="SLAgent-402 Buyer Agent")
     parser.add_argument(
         "--gateway-url",
         default="http://localhost:8000",
