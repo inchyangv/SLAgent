@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">SLAgent-402 Icon Logo</title>
+  <desc id="desc">Square shield icon with pulse line and check mark.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="64" y1="56" x2="448" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0D1C2D"/>
+      <stop offset="1" stop-color="#102C4D"/>
+    </linearGradient>
+    <linearGradient id="lineGrad" x1="80" y1="72" x2="436" y2="436" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#64E8FF"/>
+      <stop offset="0.55" stop-color="#2AA8FF"/>
+      <stop offset="1" stop-color="#61F5C0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="64" y="64" width="384" height="384" rx="96" fill="url(#bgGrad)"/>
+  <rect x="67" y="67" width="378" height="378" rx="93" stroke="url(#lineGrad)" stroke-opacity="0.6" stroke-width="6"/>
+
+  <circle cx="256" cy="256" r="124" stroke="#17395D" stroke-width="7" stroke-dasharray="16 26"/>
+  <circle cx="256" cy="256" r="124" stroke="url(#lineGrad)" stroke-width="7" stroke-dasharray="16 26" stroke-dashoffset="-34" opacity="0.66"/>
+
+  <path d="M132 304C174 214 247 185 307 206C344 219 374 253 386 299" stroke="#264E79" stroke-width="22" stroke-linecap="round"/>
+  <path d="M132 304C174 214 247 185 307 206C344 219 374 253 386 299" stroke="url(#lineGrad)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M190 272L244 326L334 214" stroke="url(#lineGrad)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
