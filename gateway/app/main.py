@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from gateway.app.config import settings
+from gateway.app.events import event_store
 from gateway.app.mandates import mandate_store
 from gateway.app.metrics import RequestMetrics
 from gateway.app.models import Metrics, PricingResult
@@ -64,7 +65,12 @@ async def register_mandate(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Mandate must be a JSON object")
     mandate = mandate_store.register(body)
-    logger.info(f"Mandate registered: {mandate.get('mandate_id', '')}")
+    mid = mandate.get("mandate_id", "")
+    event_store.record(
+        kind="negotiation.mandate_registered", actor="gateway", mandate_id=mid,
+        data={"max_price": mandate.get("max_price"), "buyer": mandate.get("buyer")},
+    )
+    logger.info(f"Mandate registered: {mid}")
     return JSONResponse(content=mandate)
 
 
@@ -118,6 +124,10 @@ async def call_endpoint(request: Request) -> JSONResponse:
         asset=settings.payment_token,
     )
     if payment_info is None:
+        event_store.record(
+            kind="payment.402_issued", actor="gateway", mandate_id=mandate_id,
+            data={"max_price": max_price},
+        )
         return create_402_response(
             max_price=max_price,
             payment_token_address=settings.payment_token,
@@ -131,6 +141,10 @@ async def call_endpoint(request: Request) -> JSONResponse:
     gateway_addr = settings.gateway_private_key and "" or ""  # filled by settlement_client
 
     request_id = generate_request_id()
+    event_store.record(
+        kind="payment.verified", actor="gateway", request_id=request_id,
+        mandate_id=mandate_id, data={"buyer": buyer, "mode": payment_info.get("mode", "hmac")},
+    )
     rm = RequestMetrics()
     rm.start()
 
@@ -151,6 +165,10 @@ async def call_endpoint(request: Request) -> JSONResponse:
             rm.mark_done()
         except httpx.RequestError as e:
             rm.mark_done()
+            event_store.record(
+                kind="execution.upstream_error", actor="gateway", request_id=request_id,
+                mandate_id=mandate_id, data={"error": str(e)},
+            )
             metrics = Metrics(ttft_ms=rm.ttft_ms, latency_ms=rm.latency_ms)
             receipt = build_receipt(
                 request_id=request_id,
@@ -197,6 +215,17 @@ async def call_endpoint(request: Request) -> JSONResponse:
     outcome: dict[str, Any] = {"success": success, "error_code": None if success else "http_error"}
     validation: dict[str, Any] = {"overall_pass": overall_pass, "results": validation_results}
 
+    event_store.record(
+        kind="execution.seller_response", actor="gateway", request_id=request_id,
+        mandate_id=mandate_id,
+        data={"success": success, "latency_ms": metrics.latency_ms, "ttft_ms": metrics.ttft_ms},
+    )
+    event_store.record(
+        kind=f"validation.{'schema_pass' if overall_pass else 'schema_fail'}",
+        actor="gateway", request_id=request_id, mandate_id=mandate_id,
+        data={"overall_pass": overall_pass, "results_count": len(validation_results)},
+    )
+
     # Compute pricing
     pricing_decision = compute_payout(
         mandate=mandate,
@@ -228,6 +257,19 @@ async def call_endpoint(request: Request) -> JSONResponse:
         t_response_done=rm.t_response_done,
     )
 
+    event_store.record(
+        kind="pricing.computed", actor="gateway", request_id=request_id,
+        mandate_id=mandate_id,
+        data={
+            "payout": pricing_decision.payout, "refund": pricing_decision.refund,
+            "rule": pricing_decision.rule_applied,
+        },
+    )
+    event_store.record(
+        kind="receipt.hash_computed", actor="gateway", request_id=request_id,
+        mandate_id=mandate_id, data={"receipt_hash": receipt.hashes.get("receipt_hash", "")},
+    )
+
     # Submit settlement on-chain
     receipt_hash = receipt.hashes.get("receipt_hash", "")
     settlement_result = settle_request(
@@ -238,6 +280,12 @@ async def call_endpoint(request: Request) -> JSONResponse:
         max_price=pricing_decision.max_price,
         payout=pricing_decision.payout,
         receipt_hash=receipt_hash,
+    )
+
+    event_store.record(
+        kind="chain.settlement_submitted", actor="gateway", request_id=request_id,
+        mandate_id=mandate_id,
+        data={"tx_hash": settlement_result.get("tx_hash"), "mode": settlement_result.get("mode")},
     )
 
     # Update receipt with settlement info
@@ -494,6 +542,12 @@ async def attest_receipt(request_id: str, request: Request) -> JSONResponse:
         expected_address=address,
     )
 
+    event_store.record(
+        kind=f"attestation.{'verified' if result.get('verified') else 'failed'}",
+        actor=role, request_id=request_id,
+        data={"signer": result.get("signer"), "verified": result.get("verified")},
+    )
+
     return JSONResponse(content=result)
 
 
@@ -501,6 +555,39 @@ async def attest_receipt(request_id: str, request: Request) -> JSONResponse:
 async def get_attestations(request_id: str) -> JSONResponse:
     """Get all attestations for a receipt."""
     return JSONResponse(content=attestation_store.get_attestations(request_id))
+
+
+# --- Event Ledger API ---
+
+
+@app.get("/v1/events")
+async def list_events(
+    request_id: str | None = None,
+    mandate_id: str | None = None,
+    kind: str | None = None,
+    actor: str | None = None,
+    limit: int = 200,
+) -> JSONResponse:
+    """Query event ledger with optional filters."""
+    events = event_store.query(
+        request_id=request_id, mandate_id=mandate_id,
+        kind=kind, actor=actor, limit=limit,
+    )
+    return JSONResponse(content={
+        "events": [e.to_dict() for e in events],
+        "count": len(events),
+    })
+
+
+@app.get("/v1/events/export")
+async def export_events() -> JSONResponse:
+    """Export all events as JSONL."""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=event_store.export_jsonl(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": "attachment; filename=events.jsonl"},
+    )
 
 
 # --- Demo Run API (server-side buyer agent orchestration) ---
