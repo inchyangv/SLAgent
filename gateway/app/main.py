@@ -244,6 +244,19 @@ async def call_endpoint(request: Request) -> JSONResponse:
     receipt.signatures = {"gateway_signature": settlement_result["gateway_signature"]}
     receipt_store.save(receipt)
 
+    # Auto-submit gateway attestation
+    if settings.gateway_private_key and receipt_hash:
+        try:
+            gw_attest_sig = sign_receipt_hash(receipt_hash, settings.gateway_private_key)
+            attestation_store.add_attestation(
+                request_id=request_id,
+                receipt_hash=receipt_hash,
+                role="gateway",
+                signature=gw_attest_sig,
+            )
+        except Exception as e:
+            logger.warning(f"Gateway auto-attestation failed: {e}")
+
     tx_hash = settlement_result.get("tx_hash")
 
     logger.info(
@@ -269,9 +282,14 @@ async def call_endpoint(request: Request) -> JSONResponse:
 
 @app.get("/v1/receipts")
 async def list_receipts(limit: int = 50) -> JSONResponse:
-    """List recent receipts."""
+    """List recent receipts (includes attestation status)."""
     receipts = receipt_store.list_recent(limit)
-    return JSONResponse(content=[r.model_dump() for r in receipts])
+    result = []
+    for r in receipts:
+        data = r.model_dump()
+        data["attestations"] = attestation_store.get_attestations(r.request_id)
+        result.append(data)
+    return JSONResponse(content=result)
 
 
 @app.get("/v1/receipts/search")
@@ -317,11 +335,13 @@ async def export_receipts() -> JSONResponse:
 
 @app.get("/v1/receipts/{request_id}")
 async def get_receipt(request_id: str) -> JSONResponse:
-    """Retrieve a receipt by request_id."""
+    """Retrieve a receipt by request_id (includes attestation status)."""
     receipt = receipt_store.get(request_id)
     if receipt is None:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    return JSONResponse(content=receipt.model_dump())
+    data = receipt.model_dump()
+    data["attestations"] = attestation_store.get_attestations(request_id)
+    return JSONResponse(content=data)
 
 
 # --- Dispute endpoints (in-memory cache + on-chain submission) ---
@@ -439,7 +459,7 @@ async def get_dispute(request_id: str) -> JSONResponse:
 
 # --- Multi-attestation endpoints (Buyer + Seller + Gateway) ---
 
-from gateway.app.attestation import attestation_store, verify_receipt_signature
+from gateway.app.attestation import attestation_store, sign_receipt_hash, verify_receipt_signature
 
 
 @app.post("/v1/receipts/{request_id}/attest")

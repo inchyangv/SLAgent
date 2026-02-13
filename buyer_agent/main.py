@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 
 import httpx
@@ -65,6 +66,17 @@ def print_result(scenario: dict, result: BuyerResult) -> None:
     for check in result.invariant_checks:
         status = "PASS" if check["passed"] else "FAIL"
         print(f"    [{status}] {check['name']}: {check['detail']}")
+
+    # Attestation status
+    attest = result.attestation_status
+    if attest:
+        status_info = attest.get("status", {})
+        count = status_info.get("count", 0)
+        complete = status_info.get("complete", False)
+        parties = status_info.get("parties_signed", [])
+        print(f"\n  Attestations: {count}/3 {'(COMPLETE)' if complete else ''}")
+        for party in parties:
+            print(f"    [{party}] signed")
 
 
 def print_summary(results: list[dict]) -> None:
@@ -125,12 +137,14 @@ async def run_agent(
     seller_url: str = "http://localhost:8001",
     modes: list[str] | None = None,
     buyer_address: str = "0xBUYER_AGENT_0000000000000000000000000001",
+    buyer_private_key: str | None = None,
 ) -> list[dict]:
     """Run the buyer agent for given scenarios."""
     agent = BuyerAgent(
         gateway_url=gateway_url,
         seller_url=seller_url,
         buyer_address=buyer_address,
+        buyer_private_key=buyer_private_key,
     )
 
     # Phase 1: Negotiate
@@ -182,11 +196,13 @@ async def main_async(args: argparse.Namespace) -> int:
     print(f"  Buyer:   {args.buyer_address}")
 
     modes = args.modes.split(",") if args.modes else None
+    buyer_key = args.buyer_private_key or os.getenv("BUYER_PRIVATE_KEY")
     results = await run_agent(
         gateway_url=args.gateway_url,
         seller_url=args.seller_url,
         modes=modes,
         buyer_address=args.buyer_address,
+        buyer_private_key=buyer_key,
     )
     print_summary(results)
 
@@ -210,6 +226,11 @@ def main() -> None:
         "--buyer-address",
         default="0xBUYER_AGENT_0000000000000000000000000001",
         help="Buyer EVM address",
+    )
+    parser.add_argument(
+        "--buyer-private-key",
+        default=None,
+        help="Buyer private key for attestation signing (or BUYER_PRIVATE_KEY env)",
     )
     parser.add_argument(
         "--modes",

@@ -20,14 +20,16 @@ Prerequisites:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 
 import httpx
 
-from gateway.app.x402 import create_payment_token
+from gateway.app.x402 import create_payment_token, create_x402_payment
 
-GATEWAY_URL = "http://localhost:8000"
+GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
+SELLER_URL = os.getenv("SELLER_URL", "http://localhost:8001")
 MAX_PRICE = "100000"
 
 SCENARIOS = [
@@ -37,16 +39,52 @@ SCENARIOS = [
 ]
 
 
+def _default_address(fill: str) -> str:
+    return "0x" + (fill * 40)
+
+
 def make_payment_header(path: str = "/v1/call") -> dict[str, str]:
-    """Create a valid payment header for the demo."""
+    """Create a valid payment header for the demo.
+
+    Supports two modes:
+    - PAYMENT_MODE=hmac (default): JSON header with HMAC token
+    - PAYMENT_MODE=x402: Base64 header with EIP-712 signed authorization (see gateway/app/x402.py)
+    """
+    payment_mode = os.getenv("PAYMENT_MODE", "hmac")
+
+    buyer_address = os.getenv("BUYER_ADDRESS", "") or _default_address("1")
+    seller_address = os.getenv("SELLER_ADDRESS", "") or _default_address("2")
+
+    if payment_mode == "x402":
+        buyer_private_key = os.getenv("BUYER_PRIVATE_KEY", "")
+        if not buyer_private_key:
+            raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
+
+        # Default to SKALE hackathon chain (BITE v2 Sandbox 2) unless overridden.
+        chain_id = int(os.getenv("CHAIN_ID", "103698795"))
+        asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "") or _default_address("0")
+
+        header_val = create_x402_payment(
+            private_key=buyer_private_key,
+            from_address=buyer_address,
+            to_address=seller_address,
+            value=MAX_PRICE,
+            asset=asset,
+            chain_id=chain_id,
+        )
+        return {"X-PAYMENT": header_val}
+
+    # Default: HMAC mode
     nonce = str(int(time.time() * 1000))
     token = create_payment_token(path=path, max_price=MAX_PRICE, nonce=nonce)
-    header_val = json.dumps({
-        "token": token,
-        "nonce": nonce,
-        "max_price": MAX_PRICE,
-        "buyer": "0xDEMO_BUYER_0000000000000000000000000001",
-    })
+    header_val = json.dumps(
+        {
+            "token": token,
+            "nonce": nonce,
+            "max_price": MAX_PRICE,
+            "buyer": buyer_address,
+        }
+    )
     return {"X-PAYMENT": header_val}
 
 
@@ -115,7 +153,82 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     else:
         print(f"  ✗ Payout {payout} is OUTSIDE expected range [{lo}, {hi}]")
 
+    # Submit attestations (buyer + seller)
+    submit_attestations(client, request_id, receipt_hash)
+
     return data
+
+
+def submit_attestations(client: httpx.Client, request_id: str, receipt_hash: str) -> None:
+    """Submit buyer + seller attestations for a receipt."""
+    buyer_private_key = os.getenv("BUYER_PRIVATE_KEY", "")
+    seller_private_key = os.getenv("SELLER_PRIVATE_KEY", "")
+
+    if not buyer_private_key and not seller_private_key:
+        print(f"\n  [Attestation] Skipped (no signing keys set)")
+        return
+
+    print(f"\n  [3] Submitting attestations...")
+
+    # Buyer attestation
+    if buyer_private_key:
+        try:
+            from gateway.app.attestation import sign_receipt_hash
+
+            buyer_sig = sign_receipt_hash(receipt_hash, buyer_private_key)
+            buyer_address = os.getenv("BUYER_ADDRESS", "")
+            if not buyer_address:
+                from eth_account import Account
+
+                buyer_address = Account.from_key(buyer_private_key).address
+            resp = client.post(
+                f"{GATEWAY_URL}/v1/receipts/{request_id}/attest",
+                json={"role": "buyer", "signature": buyer_sig, "address": buyer_address},
+            )
+            if resp.status_code == 200:
+                print(f"  ✓ Buyer attestation submitted")
+            else:
+                print(f"  ✗ Buyer attestation failed: {resp.status_code}")
+        except Exception as e:
+            print(f"  ✗ Buyer attestation error: {e}")
+
+    # Seller attestation (request signature from seller service)
+    if seller_private_key:
+        try:
+            resp = client.post(
+                f"{SELLER_URL}/seller/receipts/attest",
+                json={"receipt_hash": receipt_hash},
+            )
+            if resp.status_code == 200:
+                seller_data = resp.json()
+                resp2 = client.post(
+                    f"{GATEWAY_URL}/v1/receipts/{request_id}/attest",
+                    json={
+                        "role": "seller",
+                        "signature": seller_data["signature"],
+                        "address": seller_data.get("seller_address"),
+                    },
+                )
+                if resp2.status_code == 200:
+                    print(f"  ✓ Seller attestation submitted")
+                else:
+                    print(f"  ✗ Seller attestation submit failed: {resp2.status_code}")
+            else:
+                print(f"  ✗ Seller signing failed: {resp.status_code}")
+        except Exception as e:
+            print(f"  ✗ Seller attestation error: {e}")
+
+    # Check final status
+    try:
+        resp = client.get(f"{GATEWAY_URL}/v1/receipts/{request_id}/attestations")
+        if resp.status_code == 200:
+            status = resp.json()
+            count = status.get("count", 0)
+            complete = status.get("complete", False)
+            parties = status.get("parties_signed", [])
+            print(f"  Attestations: {count}/3 {'(COMPLETE)' if complete else ''} — {parties}")
+    except Exception:
+        pass
 
 
 def main() -> None:

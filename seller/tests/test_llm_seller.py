@@ -276,3 +276,50 @@ def test_mode_from_body(mock_client):
         resp = tc.post("/seller/call", json={"mode": "fast"})
     assert resp.status_code == 200
     assert "invoice_id" in resp.json()
+
+
+# ── Seller attestation tests ─────────────────────────────────────────────────
+
+
+def test_attest_receipt_no_key(mock_client):
+    """Attestation fails without SELLER_PRIVATE_KEY."""
+    with TestClient(app) as tc:
+        resp = tc.post(
+            "/seller/receipts/attest",
+            json={"receipt_hash": "0x" + "ab" * 32},
+        )
+    assert resp.status_code == 503
+    assert "not configured" in resp.json()["error"]
+
+
+def test_attest_receipt_missing_hash(mock_client):
+    """Attestation fails without receipt_hash."""
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/receipts/attest", json={})
+    assert resp.status_code == 400
+
+
+@patch.dict("os.environ", {"SELLER_PRIVATE_KEY": "0x" + "5" * 64})
+def test_attest_receipt_success(mock_client):
+    """Attestation succeeds with valid key and hash."""
+    receipt_hash = "0x" + "ab" * 32
+    with TestClient(app) as tc:
+        resp = tc.post(
+            "/seller/receipts/attest",
+            json={"receipt_hash": receipt_hash},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["receipt_hash"] == receipt_hash
+    assert data["signature"].startswith("0x")
+    assert data["seller_address"] != ""
+
+
+@patch.dict("os.environ", {"SELLER_PRIVATE_KEY": "0x" + "5" * 64})
+def test_attest_receipt_deterministic(mock_client):
+    """Same hash + same key produces same signature."""
+    receipt_hash = "0x" + "ab" * 32
+    with TestClient(app) as tc:
+        resp1 = tc.post("/seller/receipts/attest", json={"receipt_hash": receipt_hash})
+        resp2 = tc.post("/seller/receipts/attest", json={"receipt_hash": receipt_hash})
+    assert resp1.json()["signature"] == resp2.json()["signature"]

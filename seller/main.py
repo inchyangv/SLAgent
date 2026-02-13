@@ -312,6 +312,47 @@ async def _llm_invalid_response(client: GeminiClient) -> JSONResponse:
         return JSONResponse(content=FALLBACK_INVALID_RESPONSE)
 
 
+@app.post("/seller/receipts/attest")
+async def attest_receipt(request: Request) -> JSONResponse:
+    """Sign a receipt hash for seller attestation.
+
+    Body: {"receipt_hash": "0x..."}
+    Returns: {"receipt_hash": ..., "signature": ..., "seller_address": ...}
+
+    Requires SELLER_PRIVATE_KEY env var.
+    """
+    body = await request.json()
+    receipt_hash = body.get("receipt_hash", "")
+    if not receipt_hash:
+        return JSONResponse(status_code=400, content={"error": "receipt_hash is required"})
+
+    seller_private_key = os.getenv("SELLER_PRIVATE_KEY", "")
+    if not seller_private_key:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Seller signing not configured (SELLER_PRIVATE_KEY not set)"},
+        )
+
+    try:
+        from gateway.app.attestation import sign_receipt_hash
+
+        signature = sign_receipt_hash(receipt_hash, seller_private_key)
+        seller_address = os.getenv("SELLER_ADDRESS", "")
+        if not seller_address:
+            from eth_account import Account
+
+            seller_address = Account.from_key(seller_private_key).address
+
+        return JSONResponse(content={
+            "receipt_hash": receipt_hash,
+            "signature": signature,
+            "seller_address": seller_address,
+        })
+    except Exception as e:
+        logger.error("Seller attestation signing failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": f"Signing failed: {e}"})
+
+
 @app.get("/seller/health")
 async def health() -> dict[str, str]:
     has_key = bool(os.getenv("GEMINI_API_KEY", ""))

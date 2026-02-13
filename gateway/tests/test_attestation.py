@@ -4,6 +4,7 @@ from eth_account import Account
 
 from gateway.app.attestation import (
     AttestationStore,
+    attestation_store,
     sign_receipt_hash,
     verify_receipt_signature,
 )
@@ -172,3 +173,109 @@ def test_get_attestations_endpoint():
     data = resp.json()
     assert data["count"] == 0
     assert "attestations" in data
+
+
+# ── Integration: receipt list/detail includes attestation ────────────────────
+
+
+def test_receipt_detail_includes_attestations():
+    """GET /v1/receipts/{id} includes attestation status."""
+    from fastapi.testclient import TestClient
+    from gateway.app.main import app
+    from gateway.app.receipt import receipt_store
+    from gateway.app.models import Receipt
+
+    # Create a test receipt
+    receipt = Receipt(
+        request_id="req_attest_001",
+        hashes={"receipt_hash": _RECEIPT_HASH},
+    )
+    receipt_store.save(receipt)
+
+    # Add an attestation
+    sig = sign_receipt_hash(_RECEIPT_HASH, _BUYER_KEY)
+    attestation_store.add_attestation(
+        request_id="req_attest_001",
+        receipt_hash=_RECEIPT_HASH,
+        role="buyer",
+        signature=sig,
+        expected_address=_BUYER_ADDR,
+    )
+
+    client = TestClient(app)
+    resp = client.get("/v1/receipts/req_attest_001")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "attestations" in data
+    assert data["attestations"]["count"] == 1
+    assert "buyer" in data["attestations"]["parties_signed"]
+
+
+def test_receipt_list_includes_attestations():
+    """GET /v1/receipts includes attestation status per receipt."""
+    from fastapi.testclient import TestClient
+    from gateway.app.main import app
+    from gateway.app.receipt import receipt_store
+    from gateway.app.models import Receipt
+
+    # Create a test receipt
+    receipt = Receipt(
+        request_id="req_attest_list_001",
+        hashes={"receipt_hash": _RECEIPT_HASH},
+    )
+    receipt_store.save(receipt)
+
+    client = TestClient(app)
+    resp = client.get("/v1/receipts?limit=100")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    # Find our receipt
+    found = [r for r in data if r.get("request_id") == "req_attest_list_001"]
+    assert len(found) > 0
+    assert "attestations" in found[0]
+
+
+def test_e2e_multi_attestation_via_api():
+    """E2E: all 3 parties attest a receipt via API endpoints."""
+    from fastapi.testclient import TestClient
+    from gateway.app.main import app
+    from gateway.app.receipt import receipt_store
+    from gateway.app.models import Receipt
+
+    receipt = Receipt(
+        request_id="req_e2e_attest",
+        hashes={"receipt_hash": _RECEIPT_HASH},
+    )
+    receipt_store.save(receipt)
+
+    client = TestClient(app)
+
+    for role, key, addr in [
+        ("buyer", _BUYER_KEY, _BUYER_ADDR),
+        ("seller", _SELLER_KEY, _SELLER_ADDR),
+        ("gateway", _GATEWAY_KEY, _GATEWAY_ADDR),
+    ]:
+        sig = sign_receipt_hash(_RECEIPT_HASH, key)
+        resp = client.post(
+            "/v1/receipts/req_e2e_attest/attest",
+            json={"role": role, "signature": sig, "address": addr},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["verified"] is True
+
+    # Verify complete status
+    resp = client.get("/v1/receipts/req_e2e_attest/attestations")
+    assert resp.status_code == 200
+    status = resp.json()
+    assert status["count"] == 3
+    assert status["complete"] is True
+    assert status["all_verified"] is True
+    assert set(status["parties_signed"]) == {"buyer", "seller", "gateway"}
+
+    # Verify receipt detail includes attestations
+    resp = client.get("/v1/receipts/req_e2e_attest")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["attestations"]["complete"] is True

@@ -71,6 +71,7 @@ class BuyerResult:
     seller_response: dict[str, Any]
     invariant_checks: list[dict[str, Any]]
     error: str | None = None
+    attestation_status: dict[str, Any] = field(default_factory=dict)
 
 
 class InvariantViolation(Exception):
@@ -87,10 +88,12 @@ class BuyerAgent:
         buyer_address: str = "0xBUYER_AGENT_0000000000000000000000000001",
         max_price: str = "100000",
         timeout: float = 30.0,
+        buyer_private_key: str | None = None,
     ) -> None:
         self.gateway_url = gateway_url.rstrip("/")
         self.seller_url = seller_url.rstrip("/")
         self.buyer_address = buyer_address
+        self.buyer_private_key = buyer_private_key
         self.max_price = max_price
         self.timeout = timeout
         self.negotiation: NegotiationResult | None = None
@@ -289,7 +292,88 @@ class BuyerAgent:
                 f"Receipt for {request_id} failed {len(violations)} invariant(s): {violations}"
             )
 
+        # Auto-submit attestations if buyer has a signing key
+        if self.buyer_private_key and receipt_hash and request_id:
+            try:
+                attest_result = await self.submit_attestations(request_id, receipt_hash)
+                result.attestation_status = attest_result
+            except Exception as e:
+                logger.warning("Attestation submission failed: %s", e)
+                result.attestation_status = {"error": str(e)}
+
         return result
+
+    async def submit_attestations(
+        self,
+        request_id: str,
+        receipt_hash: str,
+    ) -> dict[str, Any]:
+        """Submit buyer + seller attestations for a receipt.
+
+        1. Signs receipt_hash with buyer key -> submits to gateway as buyer
+        2. Requests seller signature -> submits to gateway as seller
+        3. Returns final attestation status
+        """
+        results: dict[str, Any] = {}
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            # 1. Buyer attestation
+            if self.buyer_private_key:
+                try:
+                    from gateway.app.attestation import sign_receipt_hash
+
+                    buyer_sig = sign_receipt_hash(receipt_hash, self.buyer_private_key)
+                    resp = await client.post(
+                        f"{self.gateway_url}/v1/receipts/{request_id}/attest",
+                        json={
+                            "role": "buyer",
+                            "signature": buyer_sig,
+                            "address": self.buyer_address,
+                        },
+                    )
+                    results["buyer"] = resp.json() if resp.status_code == 200 else {
+                        "error": resp.text
+                    }
+                except Exception as e:
+                    logger.warning("Buyer attestation failed: %s", e)
+                    results["buyer"] = {"error": str(e)}
+
+            # 2. Seller attestation (request signature from seller, then submit to gateway)
+            try:
+                resp = await client.post(
+                    f"{self.seller_url}/seller/receipts/attest",
+                    json={"receipt_hash": receipt_hash},
+                )
+                if resp.status_code == 200:
+                    seller_data = resp.json()
+                    resp2 = await client.post(
+                        f"{self.gateway_url}/v1/receipts/{request_id}/attest",
+                        json={
+                            "role": "seller",
+                            "signature": seller_data["signature"],
+                            "address": seller_data.get("seller_address"),
+                        },
+                    )
+                    results["seller"] = resp2.json() if resp2.status_code == 200 else {
+                        "error": resp2.text
+                    }
+                else:
+                    results["seller"] = {"error": f"Seller attest returned {resp.status_code}"}
+            except Exception as e:
+                logger.warning("Seller attestation failed: %s", e)
+                results["seller"] = {"error": str(e)}
+
+            # 3. Get final attestation status
+            try:
+                resp = await client.get(
+                    f"{self.gateway_url}/v1/receipts/{request_id}/attestations",
+                )
+                if resp.status_code == 200:
+                    results["status"] = resp.json()
+            except Exception:
+                pass
+
+        return results
 
     def _check_invariants(
         self,

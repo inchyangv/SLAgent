@@ -67,11 +67,12 @@
                 <th>Payout</th>
                 <th>Refund</th>
                 <th>Rule</th>
+                <th>Attestations</th>
                 <th>Receipt Hash</th>
             </tr>
         </thead>
         <tbody id="receipts-body">
-            <tr><td colspan="7" class="empty">No receipts yet. Click Refresh or run the demo.</td></tr>
+            <tr><td colspan="8" class="empty">No receipts yet. Click Refresh or run the demo.</td></tr>
         </tbody>
     </table>
 
@@ -115,7 +116,7 @@
             if (currentFilter === 'fail') filtered = allReceipts.filter(r => !r.validation?.overall_pass);
 
             if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="empty">No receipts match filter.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No receipts match filter.</td></tr>';
                 updateStats();
                 return;
             }
@@ -134,6 +135,12 @@
                 if (payout === maxP && maxP > 0) payoutBadge = 'badge-full';
                 else if (payout > 0) payoutBadge = 'badge-partial';
 
+                // Attestation status
+                const attest = r.attestations || {};
+                const attestCount = attest.count || 0;
+                const attestComplete = attest.complete || false;
+                const attestBadge = attestComplete ? 'badge-pass' : (attestCount > 0 ? 'badge-partial' : 'badge-zero');
+
                 return `<tr onclick="showDetail('${r.request_id}')" style="cursor:pointer">
                     <td style="font-family:monospace;font-size:0.8rem">${r.request_id}</td>
                     <td>${latency}ms</td>
@@ -141,6 +148,7 @@
                     <td class="amount"><span class="badge ${payoutBadge}">${(payout/1000000).toFixed(6)}</span></td>
                     <td class="amount">${(refund/1000000).toFixed(6)}</td>
                     <td>${rule}</td>
+                    <td><span class="badge ${attestBadge}">${attestCount}/3</span></td>
                     <td class="hash" title="${hash}">${shortHash}</td>
                 </tr>`;
             }).join('');
@@ -163,7 +171,21 @@
             try {
                 const resp = await fetch(`${url}/v1/receipts/${requestId}`);
                 const data = await resp.json();
-                document.getElementById('detail-json').textContent = JSON.stringify(data, null, 2);
+                // Build attestation summary for display
+                let attestHtml = '';
+                const attest = data.attestations || {};
+                if (attest.count > 0) {
+                    const parties = attest.parties_signed || [];
+                    const roles = ['buyer', 'seller', 'gateway'];
+                    attestHtml = '\n\n--- ATTESTATIONS ---\n';
+                    attestHtml += `Status: ${attest.count}/3 ${attest.complete ? '(COMPLETE)' : ''}\n`;
+                    attestHtml += `All verified: ${attest.all_verified}\n`;
+                    for (const role of roles) {
+                        const signed = parties.includes(role);
+                        attestHtml += `  ${role}: ${signed ? 'SIGNED' : 'pending'}\n`;
+                    }
+                }
+                document.getElementById('detail-json').textContent = JSON.stringify(data, null, 2) + attestHtml;
                 document.getElementById('detail-modal').style.display = 'block';
             } catch (e) {
                 console.error('Failed to fetch receipt:', e);
