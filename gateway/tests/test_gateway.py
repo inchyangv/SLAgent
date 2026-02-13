@@ -200,3 +200,70 @@ def test_call_with_unknown_mandate_returns_400():
     )
     assert resp.status_code == 400
     assert "Unknown mandate_id" in resp.json()["detail"]
+
+
+def test_call_forwards_mode_to_seller():
+    """Test that /v1/call forwards mode as query param to seller."""
+    seller_response = {"invoice_id": "INV-M", "amount": 100, "currency": "USD",
+                       "line_items": [{"description": "x", "quantity": 1, "unit_price": 100}]}
+
+    captured_url = []
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+
+        async def capture_post(url, **kwargs):
+            captured_url.append(url)
+            mock_response = MagicMock()
+            mock_response.json.return_value = seller_response
+            mock_response.content = json.dumps(seller_response).encode()
+            mock_response.status_code = 200
+            return mock_response
+
+        mock_client.post = capture_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post(
+            "/v1/call?mode=slow",
+            json={"some": "data"},
+            headers=_payment_header(),
+        )
+
+    assert resp.status_code == 200
+    assert len(captured_url) == 1
+    assert "mode=slow" in captured_url[0]
+
+
+def test_call_mode_from_body():
+    """Test mode can come from request body."""
+    seller_response = {"invoice_id": "INV-B", "amount": 50, "currency": "EUR",
+                       "line_items": [{"description": "y", "quantity": 1, "unit_price": 50}]}
+
+    captured_url = []
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+
+        async def capture_post(url, **kwargs):
+            captured_url.append(url)
+            mock_response = MagicMock()
+            mock_response.json.return_value = seller_response
+            mock_response.content = json.dumps(seller_response).encode()
+            mock_response.status_code = 200
+            return mock_response
+
+        mock_client.post = capture_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post(
+            "/v1/call",
+            json={"mode": "invalid"},
+            headers=_payment_header(),
+        )
+
+    assert resp.status_code == 200
+    assert "mode=invalid" in captured_url[0]

@@ -963,7 +963,7 @@ SLA를 "문서"가 아니라 "협상된 객체"로 만들고 gateway가 강제(e
 ---
 
 ## T-130 — Seller Execution Request Contract (Param Passing Fix)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-030, T-060, T-120
 
@@ -983,6 +983,13 @@ buyer→gateway→seller에서 “요청 파라미터(모드/입력/타임아웃
 ### Acceptance Criteria
 - 데모에서 slow/invalid 시나리오가 “gateway를 거쳐서도” 재현된다
 - `seller/`(Gemini)와 `gateway.demo_seller` 둘 중 어떤 upstream을 붙여도, 동일한 요청(`mode=...`)으로 시나리오 재현이 된다
+
+### Completion Notes
+- gateway/app/main.py: /v1/call에서 mode를 query/body에서 추출, seller에 query+body 둘 다 전달
+- seller/main.py: mode를 query와 body 모두에서 수신 가능 (T-120에서 구현)
+- 2 new integration tests (mode forwarding from query, mode from body)
+- 155 total tests passed
+- Validate: `pytest gateway/tests/test_gateway.py -v`
 
 ---
 
