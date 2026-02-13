@@ -6,9 +6,10 @@ Modes:
 - invalid: corrupts the Gemini response so it fails schema validation
 
 Env vars:
-  GEMINI_API_KEY  — required for live Gemini calls
-  GEMINI_MODEL    — defaults to gemini-2.0-flash
-  SELLER_FALLBACK — if "true", fall back to deterministic response when Gemini unavailable
+  GEMINI_API_KEY   — required for live Gemini calls
+  GEMINI_MODEL     — defaults to gemini-2.0-flash
+  SELLER_FALLBACK  — if "true", fall back to deterministic response when Gemini unavailable
+  SELLER_ADDRESS   — EVM address of this seller (for capabilities/mandates)
 
 Usage:
     uvicorn seller.main:app --port 8001
@@ -19,9 +20,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import uuid
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 
 from seller.gemini_client import GeminiClient, GeminiError
@@ -29,7 +31,10 @@ from seller.json_extractor import JSONExtractionError, extract_json
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SLA-Pay v2 LLM Seller", version="0.2.0")
+app = FastAPI(title="SLA-Pay v2 LLM Seller", version="0.3.0")
+
+# ── Mandate store (in-memory) ───────────────────────────────────────────────
+_accepted_mandates: dict[str, dict] = {}
 
 # Lazy-initialized client (so tests can replace it)
 _gemini_client: GeminiClient | None = None
@@ -118,13 +123,98 @@ def _use_fallback() -> bool:
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 
+@app.get("/seller/capabilities")
+async def capabilities() -> JSONResponse:
+    """Expose seller capabilities, supported schemas, and identity."""
+    seller_address = os.getenv("SELLER_ADDRESS", "0x0000000000000000000000000000000000000000")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    has_key = bool(os.getenv("GEMINI_API_KEY", ""))
+    return JSONResponse(content={
+        "seller_address": seller_address,
+        "service": "llm-seller",
+        "version": "0.3.0",
+        "llm_provider": "google-gemini",
+        "llm_model": gemini_model,
+        "llm_available": has_key,
+        "supported_schemas": ["invoice_v1"],
+        "supported_modes": ["fast", "slow", "invalid"],
+        "endpoints": {
+            "call": "POST /seller/call?mode=fast|slow|invalid",
+            "capabilities": "GET /seller/capabilities",
+            "mandates_accept": "POST /seller/mandates/accept",
+            "health": "GET /seller/health",
+        },
+    })
+
+
+@app.post("/seller/mandates/accept")
+async def accept_mandate(request: Request) -> JSONResponse:
+    """Accept a mandate proposed by the buyer.
+
+    Body: mandate object (must include mandate_id, max_price, validators).
+    Seller accepts if the mandate references a supported schema.
+    """
+    body = await request.json()
+    mandate_id = body.get("mandate_id", "")
+    if not mandate_id:
+        return JSONResponse(status_code=400, content={"error": "mandate_id is required"})
+
+    # Validate that we support the requested validators
+    validators = body.get("validators", [])
+    supported = {"invoice_v1"}
+    for v in validators:
+        schema_id = v.get("schema_id", "")
+        if schema_id and schema_id not in supported:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Unsupported schema: {schema_id}", "accepted": False},
+            )
+
+    seller_address = os.getenv("SELLER_ADDRESS", "0x0000000000000000000000000000000000000000")
+
+    _accepted_mandates[mandate_id] = {
+        **body,
+        "accepted": True,
+        "accepted_at": time.time(),
+        "seller_address": seller_address,
+    }
+
+    logger.info("Mandate accepted: %s (max_price=%s)", mandate_id, body.get("max_price"))
+
+    return JSONResponse(content={
+        "mandate_id": mandate_id,
+        "accepted": True,
+        "seller_address": seller_address,
+        "message": "Mandate accepted by seller.",
+    })
+
+
+@app.get("/seller/mandates")
+async def list_mandates() -> JSONResponse:
+    """List accepted mandates."""
+    return JSONResponse(content={
+        "mandates": list(_accepted_mandates.values()),
+        "count": len(_accepted_mandates),
+    })
+
+
 @app.post("/seller/call")
-async def seller_call(mode: str = Query(default="fast")) -> JSONResponse:
+async def seller_call(request: Request, mode: str = Query(default="fast")) -> JSONResponse:
     """LLM-powered seller endpoint.
 
+    Mode can come from query param or body field. Query param takes precedence.
     Args:
         mode: One of 'fast', 'slow', 'invalid'
     """
+    # Also accept mode from body (for gateway forwarding compatibility)
+    if mode == "fast":
+        try:
+            body = await request.json()
+            if isinstance(body, dict) and "mode" in body:
+                mode = body["mode"]
+        except Exception:
+            pass
+
     if mode not in ("fast", "slow", "invalid"):
         return JSONResponse(
             status_code=400,
@@ -190,7 +280,10 @@ async def _llm_valid_response(client: GeminiClient) -> JSONResponse:
                     if "quantity" in item and isinstance(item["quantity"], float):
                         item["quantity"] = int(item["quantity"])
 
-            return JSONResponse(content=data)
+            return JSONResponse(
+                content=data,
+                headers={"X-LLM-Model": client.model, "X-LLM-Provider": "google-gemini"},
+            )
 
         except (GeminiError, JSONExtractionError) as exc:
             last_error = str(exc)
@@ -200,7 +293,10 @@ async def _llm_valid_response(client: GeminiClient) -> JSONResponse:
 
     # All retries exhausted — fall back to deterministic response
     logger.error("Gemini failed after retries: %s — using fallback", last_error)
-    return JSONResponse(content=FALLBACK_VALID_INVOICE)
+    return JSONResponse(
+        content=FALLBACK_VALID_INVOICE,
+        headers={"X-LLM-Model": "fallback", "X-LLM-Provider": "deterministic"},
+    )
 
 
 async def _llm_invalid_response(client: GeminiClient) -> JSONResponse:

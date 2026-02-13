@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from seller.gemini_client import GeminiClient, GeminiError
-from seller.main import app, set_gemini_client, FALLBACK_VALID_INVOICE, FALLBACK_INVALID_RESPONSE
+from seller.main import app, set_gemini_client, _accepted_mandates, FALLBACK_VALID_INVOICE, FALLBACK_INVALID_RESPONSE
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -57,6 +57,8 @@ def _patch_env(monkeypatch):
     """Ensure GEMINI_API_KEY is set so fallback path is not triggered."""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-for-tests")
     monkeypatch.setenv("SELLER_FALLBACK", "false")
+    monkeypatch.setenv("SELLER_ADDRESS", "0xSELLER_TEST_ADDR")
+    _accepted_mandates.clear()
 
 
 @pytest.fixture()
@@ -189,3 +191,88 @@ def test_fenced_json_response():
         assert data["invoice_id"] == "INV-FENCED"
     finally:
         set_gemini_client(None)
+
+
+# ── Capabilities endpoint tests ──────────────────────────────────────────────
+
+
+def test_capabilities_returns_seller_info(mock_client):
+    with TestClient(app) as tc:
+        resp = tc.get("/seller/capabilities")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["seller_address"] == "0xSELLER_TEST_ADDR"
+    assert data["llm_provider"] == "google-gemini"
+    assert "invoice_v1" in data["supported_schemas"]
+    assert "call" in data["endpoints"]
+    assert "mandates_accept" in data["endpoints"]
+
+
+def test_capabilities_shows_llm_model(mock_client):
+    with TestClient(app) as tc:
+        resp = tc.get("/seller/capabilities")
+    data = resp.json()
+    assert data["llm_model"] == "gemini-2.0-flash"
+    assert data["llm_available"] is True
+
+
+# ── Mandate accept endpoint tests ────────────────────────────────────────────
+
+
+def test_accept_mandate_success(mock_client):
+    mandate = {
+        "mandate_id": "0xABC123",
+        "max_price": "100000",
+        "base_pay": "60000",
+        "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
+    }
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/mandates/accept", json=mandate)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["accepted"] is True
+    assert data["mandate_id"] == "0xABC123"
+    assert data["seller_address"] == "0xSELLER_TEST_ADDR"
+
+
+def test_accept_mandate_missing_id(mock_client):
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/mandates/accept", json={"max_price": "100000"})
+    assert resp.status_code == 400
+
+
+def test_accept_mandate_unsupported_schema(mock_client):
+    mandate = {
+        "mandate_id": "0xDEF",
+        "validators": [{"type": "json_schema", "schema_id": "unknown_schema"}],
+    }
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/mandates/accept", json=mandate)
+    assert resp.status_code == 400
+    assert "Unsupported" in resp.json()["error"]
+
+
+def test_list_mandates(mock_client):
+    mandate = {
+        "mandate_id": "0xLIST1",
+        "max_price": "100000",
+        "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
+    }
+    with TestClient(app) as tc:
+        tc.post("/seller/mandates/accept", json=mandate)
+        resp = tc.get("/seller/mandates")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    assert data["mandates"][0]["mandate_id"] == "0xLIST1"
+
+
+# ── Mode from body test ──────────────────────────────────────────────────────
+
+
+def test_mode_from_body(mock_client):
+    """Mode can be passed in request body (for gateway forwarding)."""
+    with TestClient(app) as tc:
+        resp = tc.post("/seller/call", json={"mode": "fast"})
+    assert resp.status_code == 200
+    assert "invoice_id" in resp.json()

@@ -650,7 +650,7 @@ LLM 사용 원칙:
 ---
 
 ## T-120 — Gemini Seller Agent Service (Real LLM + SLA Interface)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-030, T-031, T-119
 
@@ -686,6 +686,14 @@ Seller 역할이 명확해야 한다:
   - `capabilities/quote` (seller가 오퍼 제안)
   - `capabilities` + `mandates/accept` (seller가 buyer 제안을 수락)
 - 데모 출력/로그에 Gemini 사용 증거(모델명, 요청/응답 요약 또는 usage 메타데이터)가 남는다
+
+### Completion Notes
+- seller/main.py: GET /seller/capabilities, POST /seller/mandates/accept, GET /seller/mandates 추가
+- capabilities: seller_address, llm_provider, llm_model, supported_schemas, endpoints 노출
+- mandates/accept: 지원 스키마 검증 후 수락, in-memory mandate 저장
+- seller/call: body에서도 mode 수신 가능 (gateway 호환), X-LLM-Model/X-LLM-Provider 헤더 추가
+- 28 seller tests (7 new), 143 total tests passed
+- Validate: `pytest seller/tests/ -v`
 
 ---
 
