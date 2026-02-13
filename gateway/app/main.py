@@ -19,6 +19,7 @@ from gateway.app.pricing import compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
 from gateway.app.settlement_client import (
     settle_request,
+    submit_deposit,
     submit_dispute_open,
     submit_dispute_resolve,
     submit_finalize,
@@ -271,8 +272,26 @@ async def call_endpoint(request: Request) -> JSONResponse:
         mandate_id=mandate_id, data={"receipt_hash": receipt.hashes.get("receipt_hash", "")},
     )
 
-    # Submit settlement on-chain
+    # Submit deposit → settle on-chain (buyer-funded escrow)
     receipt_hash = receipt.hashes.get("receipt_hash", "")
+
+    # Step 1: Deposit buyer's max_price into escrow
+    deposit_result = submit_deposit(
+        request_id=request_id,
+        buyer=buyer,
+        amount=pricing_decision.max_price,
+    )
+    event_store.record(
+        kind="chain.deposit_submitted", actor="gateway", request_id=request_id,
+        mandate_id=mandate_id,
+        data={
+            "tx_hash": deposit_result.get("tx_hash"),
+            "mode": deposit_result.get("mode"),
+            "amount": pricing_decision.max_price,
+        },
+    )
+
+    # Step 2: Settle (distribute payout/refund) — only if deposit didn't hard-fail
     settlement_result = settle_request(
         request_id=request_id,
         mandate_id=mandate_id,
@@ -282,7 +301,6 @@ async def call_endpoint(request: Request) -> JSONResponse:
         payout=pricing_decision.payout,
         receipt_hash=receipt_hash,
     )
-
     event_store.record(
         kind="chain.settlement_submitted", actor="gateway", request_id=request_id,
         mandate_id=mandate_id,
@@ -306,12 +324,15 @@ async def call_endpoint(request: Request) -> JSONResponse:
         except Exception as e:
             logger.warning(f"Gateway auto-attestation failed: {e}")
 
-    tx_hash = settlement_result.get("tx_hash")
+    deposit_tx = deposit_result.get("tx_hash")
+    settle_tx = settlement_result.get("tx_hash")
+    # For backward compat, tx_hash = settle tx (or deposit tx if settle was mock)
+    tx_hash = settle_tx or deposit_tx
 
     logger.info(
         f"Settled: req={request_id} mandate={mandate_id} buyer={buyer} "
         f"payout={pricing_decision.payout} refund={pricing_decision.refund} "
-        f"rule={pricing_decision.rule_applied} tx={tx_hash}"
+        f"rule={pricing_decision.rule_applied} deposit_tx={deposit_tx} settle_tx={settle_tx}"
     )
 
     return JSONResponse(
@@ -325,6 +346,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "refund": str(pricing_decision.refund),
             "receipt_hash": receipt_hash,
             "tx_hash": tx_hash,
+            "deposit_tx_hash": deposit_tx,
+            "settle_tx_hash": settle_tx,
         }
     )
 

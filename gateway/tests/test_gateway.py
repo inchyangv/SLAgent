@@ -274,3 +274,60 @@ def test_call_mode_from_body():
 
     assert resp.status_code == 200
     assert "mode=invalid" in captured_url[0]
+
+
+def test_call_response_includes_deposit_and_settle_tx():
+    """Test /v1/call response includes deposit_tx_hash and settle_tx_hash."""
+    seller_response = {"invoice_id": "INV-D", "amount": 100, "currency": "USD",
+                       "line_items": [{"description": "x", "quantity": 1, "unit_price": 100}]}
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = seller_response
+        mock_response.content = json.dumps(seller_response).encode()
+        mock_response.status_code = 200
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post("/v1/call", json={"payload": "test"}, headers=_payment_header())
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # In mock mode both are None, but keys must be present
+    assert "deposit_tx_hash" in data
+    assert "settle_tx_hash" in data
+    assert "tx_hash" in data
+
+
+def test_call_deposit_event_recorded():
+    """Test that /v1/call records a chain.deposit_submitted event."""
+    from gateway.app.events import event_store
+
+    seller_response = {"invoice_id": "INV-E", "amount": 100, "currency": "USD",
+                       "line_items": [{"description": "x", "quantity": 1, "unit_price": 100}]}
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = seller_response
+        mock_response.content = json.dumps(seller_response).encode()
+        mock_response.status_code = 200
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post("/v1/call", json={"payload": "test"}, headers=_payment_header())
+
+    assert resp.status_code == 200
+    request_id = resp.json()["request_id"]
+
+    # Check that deposit event was recorded
+    deposit_events = [
+        e for e in event_store.query(request_id=request_id, kind="chain.deposit_submitted")
+    ]
+    assert len(deposit_events) >= 1
+    assert deposit_events[0].data.get("amount") is not None

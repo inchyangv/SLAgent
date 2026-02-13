@@ -4,8 +4,9 @@ out = "out"
 libs = ["lib"]
 test = "test"
 solc_version = "0.8.24"
-# SKALE BITE v2 Sandbox 2 requires Istanbul or lower (per SKALE hackathon docs).
-evm_version = "istanbul"
+# OpenZeppelin 5.5.0 requires Cancun (mcopy). SKALE BITE v2 Sandbox 2 deployment
+# tested successfully with Cancun bytecode.
+evm_version = "cancun"
 
 [profile.default.fmt]
 line_length = 100

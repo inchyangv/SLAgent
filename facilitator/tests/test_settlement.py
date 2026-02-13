@@ -93,3 +93,14 @@ def test_submit_without_chain_logs_mock(client):
     )
     # No chain → returns None (mock)
     assert result is None
+
+
+def test_submit_deposit_mock_mode(client):
+    """submit_deposit without chain connection returns None (mock mode)."""
+    result = client.submit_deposit(
+        request_id_str="req_deposit_001",
+        request_id=b"\x01" * 32,
+        buyer="0x" + "11" * 20,
+        amount=100_000,
+    )
+    assert result is None  # no chain configured → mock

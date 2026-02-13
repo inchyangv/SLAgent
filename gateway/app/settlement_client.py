@@ -95,6 +95,35 @@ def get_settlement_client() -> SettlementClient:
     return _client
 
 
+def submit_deposit(
+    *,
+    request_id: str,
+    buyer: str,
+    amount: int,
+) -> dict[str, Any]:
+    """Submit a deposit transaction to escrow buyer funds before settlement.
+
+    Returns dict with tx_hash (str|None) and mode ("chain"|"mock"|"error").
+    """
+    client = get_settlement_client()
+    request_id_bytes = Web3.keccak(text=request_id)
+    buyer_addr = _normalize_addr(buyer, "buyer")
+
+    try:
+        tx_hash = client.submit_deposit(
+            request_id_str=request_id,
+            request_id=request_id_bytes,
+            buyer=buyer_addr,
+            amount=amount,
+        )
+        mode = "chain" if tx_hash else "mock"
+        logger.info(f"Deposit: req={request_id} buyer={buyer_addr} amount={amount} mode={mode} tx={tx_hash}")
+        return {"tx_hash": tx_hash, "mode": mode}
+    except Exception as e:
+        logger.error(f"Deposit failed: req={request_id} error={e}")
+        return {"tx_hash": None, "mode": "error", "error": str(e)}
+
+
 def settle_request(
     *,
     request_id: str,

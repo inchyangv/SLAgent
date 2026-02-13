@@ -773,7 +773,7 @@ Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment aut
 ---
 
 ## T-123 — Fix On-chain Funds Flow (Buyer Pays, Not Gateway)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-010, T-050, T-122
 
@@ -797,13 +797,14 @@ Update the on-chain flow so **the buyer is the payer** (or the contract has escr
 - Settlement distributes payout/refund from escrowed buyer funds
 
 ### Completion Notes
-- (부분 완료) 컨트랙트/라이브러리 레벨:
-  - SLASettlement.sol: deposit() + DEPOSITED→PENDING flow
-  - facilitator/settlement.py: submit_deposit()
-  - gateway/app/settlement_client.py: ABI에 deposit 포함
-- (미완) gateway 엔드투엔드 플로우:
-  - 현재 `gateway/app/main.py`는 deposit 없이 settle을 호출하므로, 라이브 체인에서는 settle이 revert될 수 있음
-  - 위 갭을 메워야 “항상 tx_hash가 찍히는” 데모가 가능
+- SLASettlement.sol: deposit() + DEPOSITED→PENDING flow (기존)
+- facilitator/settlement.py: submit_deposit() (기존)
+- gateway/app/settlement_client.py: submit_deposit() 래퍼 추가, ABI 일치
+- gateway/app/main.py: /v1/call에서 deposit→settle 순서 연결, deposit_tx_hash/settle_tx_hash 응답 포함
+- Event ledger: chain.deposit_submitted 이벤트 기록
+- contracts/foundry.toml: evm_version cancun (OZ 5.5.0 mcopy 호환)
+- 신규 테스트: gateway/tests/test_settlement_client.py (4개), gateway 2개, facilitator 1개
+- Validate: `.venv/bin/python -m pytest gateway/tests/ facilitator/tests/ -v` + `cd contracts && forge test -v`
 
 ---
 
