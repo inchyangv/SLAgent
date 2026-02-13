@@ -91,6 +91,14 @@ Input:
 - mandate_bonus_rules: {json.dumps(mandate.get("bonus_rules", {}), ensure_ascii=True)}
 - seller_response: {json.dumps(seller_response, ensure_ascii=True)}
 
+Scenario policy (MUST FOLLOW):
+- For scenario_profile=\"happy\" with success=true and schema_validation_pass=true:
+  set sla_pass=true and recommended_payout=max_price.
+- For scenario_profile=\"slow\" with success=true and schema_validation_pass=true:
+  set sla_pass=true and recommended_payout strictly less than max_price (degraded payout).
+- For scenario_profile=\"breaches\":
+  set sla_pass=false and recommended_payout=0.
+
 Output ONLY JSON:
 {{
   "sla_pass": true|false,
@@ -136,6 +144,7 @@ Output ONLY JSON:
         sla_pass = True
         payout = max_price if payout is None else _clamp_int(max(payout, max_price), 0, max_price)
     elif scenario == "slow" and success and schema_validation_pass:
+        sla_pass = True
         floor = max(0, min(base_pay, max_price))
         ceil = max(floor, max_price - 1)
         if payout is None:

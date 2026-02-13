@@ -9,89 +9,114 @@ and settles payment on-chain with automatic split + refund.
 ## Architecture
 
 ```
-Buyer Agent ──► SLAgent-402 Gateway ──► Seller Agent
+Buyer Agent ──► SLAgent-402 Gateway ──► Seller Service
                     │
                     ├── Measures TTFT / latency
-                    ├── Runs validators (JSON schema)
-                    ├── Generates Performance Receipt
+                    ├── Runs deterministic validators (JSON schema)
+                    ├── Computes pricing + receipt
                     └── Submits on-chain settlement
                             │
-                    Settlement Contract (SKALE Base Sepolia (BITE v2 Sandbox 2))
-                    ├── Pays seller (payout)
-                    ├── Refunds buyer (max_price - payout)
-                    └── Emits receipt hash
+Dashboard (static) ◄─────────┘
+Settlement Contract (SKALE Base Sepolia / BITE v2 Sandbox 2)
 ```
 
 ## Quickstart
 
-### Prerequisites
-
+Prerequisites:
 - Python 3.11+
-- Node.js 18+
-- Foundry (for Solidity contracts)
+- Foundry (optional for contracts/tests)
 
-### Gateway (Python / FastAPI)
-
+Install dependencies:
 ```bash
-# Install dependencies
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
+```
 
-# Run tests
-pytest gateway/tests/ -v
+Create `.env`:
+```bash
+cp .env.example .env
+```
 
-# Start gateway
+Optional local-only demo overrides (no chain, deterministic seller):
+```bash
+PAYMENT_MODE=hmac
+SELLER_FALLBACK=true
+```
+
+Run the one-command demo (starts seller + gateway + buyer agent):
+```bash
+python scripts/demo_one_command.py
+```
+
+If you want signing/attestations, set `DEMO_PRIVATE_KEY` or `DEMO_MNEMONIC` in `.env`
+or inline when you run the demo:
+```bash
+DEMO_PRIVATE_KEY=0x... python scripts/demo_one_command.py
+```
+
+Open the demo console:
+```text
+http://localhost:8000/dashboard/console.html
+```
+
+For full x402 + on-chain settlement, set `PAYMENT_MODE=x402` and role keys in `.env`.
+See `LOCAL.md` and `DEMO.md` for the full checklist.
+
+## Manual Run
+
+Start seller (set `SELLER_FALLBACK=true` if you do not have a Gemini key):
+```bash
+uvicorn seller.main:app --port 8001
+```
+
+Start gateway:
+```bash
 uvicorn gateway.app.main:app --port 8000
 ```
 
-### Contracts (Solidity / Foundry)
-
+Run the autonomous buyer agent:
 ```bash
-cd contracts
-forge build
-forge test -v
+python -m buyer_agent.main
 ```
 
-### Dashboard
-
-Open `dashboard/index.html` in your browser (static page, no build needed).
-
-### End-to-End Demo
-
+Or run the scripted end-to-end scenarios:
 ```bash
-# Start seller + gateway
-uvicorn gateway.demo_seller.main:app --port 8001 &
-uvicorn gateway.app.main:app --port 8000 &
-
-# Run three demo scenarios
 python scripts/run_demo.py
 ```
 
 ## Project Structure
 
 ```
-contracts/       Solidity settlement + dispute contracts (Foundry)
-gateway/         FastAPI reverse proxy, validators, pricing, receipts
-facilitator/     Settlement transaction coordinator
-dashboard/       Web UI for receipt/metrics visualization
-docs/            Architecture, API, security, demo documentation
-scripts/         Demo and utility scripts
+contracts/         Solidity settlement + dispute contracts (Foundry)
+gateway/           FastAPI reverse proxy, validators, pricing, receipts
+gateway/demo_seller/  Minimal deterministic seller stub
+seller/            Gemini-backed seller service (fast/slow/invalid)
+buyer_agent/       Autonomous buyer CLI (negotiation + 402 + receipt checks)
+facilitator/       Settlement transaction coordinator
+shared/            Shared env loader and utilities
+dashboard/         Static demo console (console.html)
+scripts/           Demo orchestration and utilities
+docs/              Architecture, API, security, demo documentation
+data/              Local SQLite receipts (optional)
 ```
 
 ## Documentation
 
+- [Demo Guide](DEMO.md)
+- [Local Setup](LOCAL.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [API Schemas](docs/API.md)
-- [Security](docs/SECURITY.md)
-- [Demo Guide](docs/DEMO.md)
+- [Security Notes](docs/SECURITY.md)
 - [Submission](docs/SUBMISSION.md)
 
 ## Security Assumptions (MVP)
 
 - **Gateway is trusted** as the single attestation authority (future: multi-party signing)
 - **Resolver is centralized** (future: decentralized arbitration)
-- **Payments use HMAC** instead of real x402 on-chain proofs (future: real x402)
-- **In-memory storage** — restart loses state (future: persistent DB)
-- See [Security Notes](docs/SECURITY.md) for full threat model
+- **Payment verification is off-chain** (HMAC or x402 headers); settlement is on-chain
+- **Storage is best-effort** — receipts are in-memory unless `RECEIPT_DB_PATH` is set
+- **LLM policy is advisory** and constrained by deterministic guardrails
 
 ## License
 

@@ -2,44 +2,54 @@
 
 ## Summary
 
-**SLAgent-402** is a pay-by-performance settlement layer for agent-to-agent API calls.
-The buyer pays up to `max_price` and automatically gets a refund based on measured SLA (latency + deterministic validity), settled on-chain on **SKALE (BITE v2 Sandbox 2)**.
+**SLAgent-402** is a pay-by-performance trust layer for agent-to-agent commerce.
+It combines x402 payment gating, Gemini-based SLA judgement/negotiation, and SKALE on-chain settlement so buyers pay for delivered quality, not promises.
 
 Tagline: **Don't pay upfront. Pay by proof.**
 
----
+## Why This Problem Matters
+
+In autonomous AI commerce, failures are expensive:
+- A buyer can be charged full price even when output is late, invalid, or low quality.
+- Static API billing does not reflect probabilistic model performance.
+- Without real-time adjudication, agent-to-agent payments are not economically safe.
+
+SLAgent-402 closes that gap with measurable, auditable, programmable settlement.
 
 ## What We Built
 
-- **Seller Service (Gemini)**: calls Google Gemini to generate a realistic `invoice_v1` JSON response.
-- **Gateway (deterministic)**: measures latency, validates output with JSON Schema, computes payout/refund, stores receipts + event timeline, and submits on-chain settlement.
-- **Settlement Contract**: escrow `deposit()` + split/refund `settle()` (with dispute lifecycle available).
-- **Dashboard**: one-page console to run scenarios and view receipts/events/tx hashes.
+- **Seller Service (Gemini)**
+  - Produces realistic `invoice_v1` responses with explicit LLM evidence headers.
+- **SLA Gateway (x402 + Gemini policy)**
+  - Enforces `402 -> paid request` flow.
+  - Measures latency and schema validity.
+  - Uses Gemini as SLA judge and negotiation engine.
+  - Applies guardrails and computes payout/refund.
+  - Persists receipts/events and submits SKALE settlement txs.
+- **Settlement Contract**
+  - `deposit()` escrow + `settle()` payout/refund split + dispute lifecycle.
+- **Dashboard (FE-first demo)**
+  - Preset-based autopilot, negotiation history, receipts, timeline, and live balances.
 
-LLM evidence:
-- Seller responses include `X-LLM-Provider`, `X-LLM-Model`, `X-LLM-Used`, `X-LLM-Mode`.
+## Gemini Role (Critical)
 
----
+Gemini is not decorative. It is part of the economic control loop:
+- **SLA judgement**: decides pass/degraded/breach tendency and recommends payout.
+- **SLA negotiation**: proposes/counters mandate pricing terms before execution.
+- **Scenario-sensitive behavior**: different negotiation and payout posture for `Happy Path`, `Slow SLA`, `Breaches`.
 
-## Demo Flow
+Result: the system demonstrates adaptive settlement logic aligned with runtime service quality.
 
-`Buyer (dashboard/runner) -> Gateway -> Seller (Gemini) -> Receipt/Event ledger -> SKALE deposit + settle`
+## Live Demo Flow
 
-What judges can see live:
-1. Call without payment -> `402 Payment Required` (x402-style challenge)
-2. Retry with payment header -> request executed
-3. Seller generates invoice via Gemini (real LLM call)
-4. Gateway enforces SLA deterministically:
-   - latency tiers (payout changes with speed)
-   - schema validity (invalid output -> payout 0)
-5. Gateway returns `receipt_hash`, `breach_reasons`, and SKALE tx hashes:
-   - `deposit_tx_hash`
-   - `settle_tx_hash`
+`Buyer (dashboard autopilot) -> Gateway -> Seller (Gemini) -> Receipt/Event ledger -> SKALE deposit + settle`
 
-SLA simulation (demo-friendly):
-- Seller supports `fast`, `slow`, `invalid`, `error`, `timeout` and `delay_ms`.
-
----
+What judges see:
+1. x402-style payment gating (`402` challenge and paid request path).
+2. Buyer-funded escrow deposit on SKALE.
+3. Gemini-in-the-loop SLA judgement and negotiation traces.
+4. Scenario-based payout/refund changes in real time.
+5. On-chain proof via `deposit_tx_hash` and `settle_tx_hash`.
 
 ## Network / Token (Hackathon)
 
@@ -48,59 +58,67 @@ SKALE Hackathon chain: **BITE v2 Sandbox 2**
 - RPC: `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
 - Explorer: `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
 - Gas token: `sFUEL`
-- Reference: `https://docs.skale.space/get-started/hackathon/info#bite-v2-sandbox-2`
 
-Payment/settlement token: predeployed **USDC (6 decimals)**
+Payment token: predeployed **USDC (6 decimals)**
 - USDC: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
-- x402/EIP-712 domain: `name=USDC`, `version=""` (empty string)
+- x402/EIP-712 domain: `name=USDC`, `version=""`
 
-Faucet/support:
-- SKALE Builders Telegram: `https://t.me/+dDdvu5T6BOEzZDEx` (ask `@TheGreatAxios` for `sFUEL`/`USDC`)
+Note:
+- Endpoint includes `base-sepolia` in hostname, but this is SKALE infrastructure (not Ethereum Base Sepolia).
 
----
+## Wallet Roles / Real Money Path
 
-## How To Run (Local + SKALE)
+- `BUYER`: submits deposit and pays max budget
+- `SELLER`: receives payout when SLA is met
+- `GATEWAY`: submits settlement/dispute transactions
 
-This repo uses a single root `.env` for Gateway/Seller/scripts (Python services auto-load it).
+Economic path:
+- Buyer locks `max_price` -> Gateway computes SLA result -> Seller gets payout -> Buyer receives refund (`max_price - payout`).
 
-1) Configure env
+## How To Run
+
+1) Configure `.env`
 ```bash
 cp .env.example .env
 ```
-Fill at least:
+Set at minimum:
+- `PAYMENT_MODE=x402`
 - `GEMINI_API_KEY`
-- `PRIVATE_KEY` (contract deploy)
-- `GATEWAY_PRIVATE_KEY` (on-chain signer)
-- `SETTLEMENT_CONTRACT_ADDRESS=0xd5FBcF82364865E2477Aae988A3C3232Fae77756`
+- `LLM_POLICY_ENABLED=true`
+- `LLM_NEGOTIATION_ENABLED=true`
+- `BUYER_PRIVATE_KEY`, `SELLER_PRIVATE_KEY`, `GATEWAY_PRIVATE_KEY`
+- `SETTLEMENT_CONTRACT_ADDRESS`
 
-2) Deploy contracts (Foundry)
+2) Deploy settlement contract (Foundry)
 ```bash
 set -a; source .env; set +a
 cd contracts
 forge script script/DeploySlaPayV2.s.sol:DeploySlaPayV2 --rpc-url "$RPC_URL" --broadcast -vvvv
 ```
 
-3) Run services
+3) Approve buyer USDC to settlement
+```bash
+set -a; source .env; set +a
+cast send --rpc-url "$CHAIN_RPC_URL" --private-key "$BUYER_PRIVATE_KEY" \
+  "$PAYMENT_TOKEN_ADDRESS" "approve(address,uint256)" "$SETTLEMENT_CONTRACT_ADDRESS" \
+  "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+```
+
+4) Run services and open dashboard
 ```bash
 source .venv/bin/activate
 uvicorn seller.main:app --port 8001
 uvicorn gateway.app.main:app --port 8000
 ```
-
-4) Open dashboard
 - `http://localhost:8000/dashboard/console.html`
-
----
 
 ## Track Fit
 
-- **SKALE**: per-request on-chain settlement (escrow + split + refund)
-- **x402**: `402 -> paid request` payment gating (optional EIP-712 verification mode exists)
-- **Agentic Commerce**: mandate-like SLA terms + receipts as proofs + programmable settlement
-- **AI**: Gemini-powered seller with explicit evidence headers
-
----
+- **SKALE**: low-cost per-request settlement and auditable dispute lifecycle
+- **x402**: standard payment challenge/paid request interface
+- **Agentic Commerce**: machine-to-machine mandate, monitoring, and settlement
+- **AI-native trust**: Gemini-driven adjudication + negotiation in the critical path
 
 ## Current Limitation
 
-- For demo simplicity, the current `deposit()` payer is the **Gateway EOA**, so `GATEWAY_PRIVATE_KEY` must hold USDC + sFUEL.
+- LLM policy is fail-open by design: if Gemini is unavailable or malformed, gateway falls back to deterministic rule logic.

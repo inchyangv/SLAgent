@@ -1397,6 +1397,109 @@ gateway에 데모 전용 orchestration API를 추가한다.
 
 ---
 
+## T-146 — x402 Agentic Tool Chain (2+ Paid Steps + CDP Wallet + Budgeting)
+**Status:** TODO
+**Priority:** P0
+**Depends on:** T-040, T-121, T-122, T-137
+
+### Description
+Meet the x402 track with an explicit multi-step paid tool chain.
+- At least 2 paid tool calls (each 402 → pay → retry)
+- CDP Wallet used for signing/custody proof
+- Deterministic budget reasoning and spend logs
+
+### Tasks
+- Define a tool catalog with price/latency/quality metadata:
+  - `data/tool_catalog.json` or `gateway/app/tools.py`
+  - At least 2 paid tools (e.g., `data_lookup`, `report_summarize`)
+- Add a "discover → decide → pay → outcome" chain to the Buyer Agent:
+  - Step 1: paid data call
+  - Step 2: paid post-processing/report call
+  - Each step runs its own 402 challenge + paid retry
+- Integrate CDP Wallet:
+  - Route x402 signing/custody through CDP Wallet
+  - Logs show "CDP wallet used" clearly
+- Budget reasoning + limits:
+  - Deterministic rules such as `budget_usdc`, `max_step_price`, `min_value_per_price`
+  - Downgrade/abort with reason code when over budget
+- Spend tracking + report:
+  - Per-step `tool_id`, `price`, `receipt_id`, `payment_hash`
+  - Total spend and remaining budget in logs + JSON
+- Add a demo script:
+  - `scripts/run_x402_chain_demo.py` (or an option on existing demo)
+  - One run shows 2 paid steps + final outcome + spend summary
+
+### Acceptance Criteria
+- One workflow shows 2+ x402 payments (each 402 → pay → retry) in logs
+- CDP Wallet usage is evidenced in config/logs/screenshots
+- Per-step spend + total spend + budget reasoning are logged and exportable
+- README/DEMO docs include run steps and sample output
+
+---
+
+## T-147 — AP2 Intent → Authorization → Settlement Pattern (Audit-ready)
+**Status:** TODO
+**Priority:** P0
+**Depends on:** T-127, T-129, T-050, T-138
+
+### Description
+Make the AP2 flow a reusable pattern:
+intent creation → authorization → settlement → receipt.
+All steps use A2A/AP2 envelopes and leave audit-ready records.
+
+### Tasks
+- Define AP2 message types and schemas:
+  - `intent.create`, `intent.authorize`, `settlement.execute`, `receipt.issue`
+  - Required fields: `intent_id`, `authorization_id`, `settlement_id`, `receipt_id`
+- Enforce state transitions in `gateway/app/a2a/routes.py`:
+  - Block settlement without authorization
+  - Provide failure modes for expired/canceled authorization
+- Record "who authorized what" in receipt/event logs:
+  - `authorized_by`, `authorized_at`, `policy_id` or `mandate_id`
+- Add a failure demo path:
+  - authorization rejected/expired → settlement blocked → failure receipt
+- Add docs + sample messages:
+  - `docs/AP2_FLOW.md` or `docs/SUBMISSION.md` with JSON examples
+
+### Acceptance Criteria
+- Full intent → authorization → settlement → receipt succeeds via AP2 envelopes
+- One authorization failure path is demoed and logged
+- Receipt/ledger shows authorizer, timestamp, and policy clearly
+
+---
+
+## T-148 — BITE v2 Encrypted Conditional Settlement (Privacy + Trigger)
+**Status:** TODO
+**Priority:** P0
+**Depends on:** T-010, T-050, T-138
+
+### Description
+Use BITE v2 so encrypted conditions/pricing/policy are revealed and settled
+only when conditions are met. The demo must show why privacy matters.
+
+### Tasks
+- Define encrypted fields:
+  - e.g., `max_price`, `latency_tiers`, `tool_choice`, `buyer_policy`
+- Decide the BITE v2 SDK integration point:
+  - `facilitator/` or `gateway/app/settlement_client.py`
+- Implement condition evaluation + decrypt trigger:
+  - Condition: SLA validation pass + budget/policy satisfied
+  - On failure, do not decrypt or settle, log a reason code
+- Record encrypted lifecycle in logs/receipts:
+  - `encrypted_payload_hash`, `condition_result`, `decrypt_time`, `triggered_by`
+- Add two demo scenarios:
+  - Condition met → decrypt → settle → receipt
+  - Condition failed → no decrypt → no settlement (audit trail kept)
+- Document:
+  - what is private, when it unlocks, who can trigger
+
+### Acceptance Criteria
+- Logs show encrypt → condition check → decrypt/settle → receipt
+- Failure path shows no decrypt and no settlement
+- Submission includes BITE v2 evidence (logs/screenshots/code locations)
+
+---
+
 ## Stretch Tickets (Optional)
 ### T-200 — Add SQL Test Harness Validator
 **Status:** TODO  
