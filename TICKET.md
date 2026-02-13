@@ -698,7 +698,7 @@ Seller 역할이 명확해야 한다:
 ---
 
 ## T-121 — Buyer Agent (Autonomous Buyer)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-040, T-090, T-119, T-120
 
@@ -728,6 +728,13 @@ Add a minimal "buyer agent" that behaves like an autonomous client:
 ### Acceptance Criteria
 - Running buyer agent demonstrates an agentic commerce flow end-to-end (negotiate → pay → proof)
 - Buyer agent refuses responses that fail invariants or schema (fail-closed)
+
+### Completion Notes
+- buyer_agent/client.py: discover_seller(), negotiate_mandate(), NegotiationResult 추가
+- buyer_agent/main.py: negotiation phase 출력 (seller capabilities, mandate, acceptance)
+- --seller-url 옵션 추가, mandate template matching PROJECT.md
+- 13 buyer agent tests (4 new negotiation tests), 147 total passed
+- Validate: `pytest buyer_agent/tests/ -v`
 
 ---
 

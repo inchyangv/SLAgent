@@ -24,7 +24,7 @@ import sys
 
 import httpx
 
-from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation
+from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation, NegotiationResult
 
 
 SCENARIOS = [
@@ -104,17 +104,45 @@ def print_summary(results: list[dict]) -> None:
     print()
 
 
+def print_negotiation(neg: NegotiationResult) -> None:
+    print(f"\n{'─'*64}")
+    print("  NEGOTIATION PHASE")
+    print(f"{'─'*64}")
+    caps = neg.seller_capabilities
+    print(f"  Seller address:    {caps.get('seller_address', 'N/A')}")
+    print(f"  LLM provider:      {caps.get('llm_provider', 'N/A')}")
+    print(f"  LLM model:         {caps.get('llm_model', 'N/A')}")
+    print(f"  LLM available:     {caps.get('llm_available', False)}")
+    print(f"  Supported schemas: {caps.get('supported_schemas', [])}")
+    print(f"  Mandate ID:        {neg.mandate_id[:24]}...")
+    print(f"  Max price:         {neg.mandate.get('max_price', 'N/A')}")
+    print(f"  Seller accepted:   {neg.seller_accepted}")
+    print(f"  Summary:           {neg.summary}")
+
+
 async def run_agent(
     gateway_url: str,
+    seller_url: str = "http://localhost:8001",
     modes: list[str] | None = None,
     buyer_address: str = "0xBUYER_AGENT_0000000000000000000000000001",
 ) -> list[dict]:
     """Run the buyer agent for given scenarios."""
     agent = BuyerAgent(
         gateway_url=gateway_url,
+        seller_url=seller_url,
         buyer_address=buyer_address,
     )
 
+    # Phase 1: Negotiate
+    try:
+        negotiation = await agent.negotiate_mandate()
+        print_negotiation(negotiation)
+        if not negotiation.seller_accepted:
+            print("  WARNING: Seller did not accept mandate. Proceeding anyway for demo.")
+    except Exception as exc:
+        print(f"\n  Negotiation skipped (seller unavailable): {exc}")
+
+    # Phase 2: Execute scenarios
     scenarios = SCENARIOS if modes is None else [s for s in SCENARIOS if s["mode"] in modes]
     results = []
 
@@ -150,11 +178,13 @@ async def main_async(args: argparse.Namespace) -> int:
 
     print_header()
     print(f"\n  Gateway: {args.gateway_url}")
+    print(f"  Seller:  {args.seller_url}")
     print(f"  Buyer:   {args.buyer_address}")
 
     modes = args.modes.split(",") if args.modes else None
     results = await run_agent(
         gateway_url=args.gateway_url,
+        seller_url=args.seller_url,
         modes=modes,
         buyer_address=args.buyer_address,
     )
@@ -170,6 +200,11 @@ def main() -> None:
         "--gateway-url",
         default="http://localhost:8000",
         help="Gateway URL (default: http://localhost:8000)",
+    )
+    parser.add_argument(
+        "--seller-url",
+        default="http://localhost:8001",
+        help="Seller URL (default: http://localhost:8001)",
     )
     parser.add_argument(
         "--buyer-address",

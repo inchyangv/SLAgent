@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation
+from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation, NegotiationResult
 
 
 # ── Mock Gateway ─────────────────────────────────────────────────────────────
@@ -242,3 +242,115 @@ def test_buyer_result_dataclass():
     assert result.success
     assert result.payout == 100000
     assert result.error is None
+
+
+# ── Negotiation tests ────────────────────────────────────────────────────────
+
+
+def _make_seller_mock_handler():
+    """Mock seller + gateway handler for negotiation tests."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+
+        if "/seller/capabilities" in url and request.method == "GET":
+            return httpx.Response(200, json={
+                "seller_address": "0xSELLER_TEST",
+                "llm_provider": "google-gemini",
+                "llm_model": "gemini-2.0-flash",
+                "llm_available": True,
+                "supported_schemas": ["invoice_v1"],
+                "supported_modes": ["fast", "slow", "invalid"],
+                "endpoints": {},
+            })
+
+        if "/seller/mandates/accept" in url and request.method == "POST":
+            body = json.loads(request.content)
+            return httpx.Response(200, json={
+                "mandate_id": body.get("mandate_id", ""),
+                "accepted": True,
+                "seller_address": "0xSELLER_TEST",
+            })
+
+        return httpx.Response(404, json={"error": "Not found"})
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_discover_seller():
+    """Buyer can discover seller capabilities."""
+    handler = _make_seller_mock_handler()
+    transport = httpx.MockTransport(handler)
+
+    agent = BuyerAgent(seller_url="http://test-seller")
+    async with httpx.AsyncClient(transport=transport) as client:
+        # Monkey-patch the discover to use our transport
+        resp = await client.get("http://test-seller/seller/capabilities")
+    data = resp.json()
+    assert data["seller_address"] == "0xSELLER_TEST"
+    assert "invoice_v1" in data["supported_schemas"]
+
+
+@pytest.mark.asyncio
+async def test_negotiate_mandate():
+    """Buyer negotiates mandate and seller accepts."""
+    handler = _make_seller_mock_handler()
+    transport = httpx.MockTransport(handler)
+
+    agent = BuyerAgent(seller_url="http://test-seller")
+
+    # Pre-discover capabilities
+    caps = {
+        "seller_address": "0xSELLER_TEST",
+        "llm_provider": "google-gemini",
+        "llm_model": "gemini-2.0-flash",
+        "llm_available": True,
+        "supported_schemas": ["invoice_v1"],
+    }
+
+    # Patch httpx to use mock transport for mandate acceptance
+    import buyer_agent.client as _mod
+    _orig = httpx.AsyncClient
+
+    class MockAsyncClient(httpx.AsyncClient):
+        def __init__(self, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(**kwargs)
+
+    _mod.httpx.AsyncClient = MockAsyncClient
+    try:
+        result = await agent.negotiate_mandate(seller_capabilities=caps)
+    finally:
+        _mod.httpx.AsyncClient = _orig
+
+    assert result.seller_accepted is True
+    assert result.mandate_id != ""
+    assert result.mandate["buyer"] == agent.buyer_address
+    assert result.mandate["seller"] == "0xSELLER_TEST"
+    assert "invoice_v1" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_negotiate_unsupported_schema():
+    """Buyer rejects if seller does not support required schema."""
+    agent = BuyerAgent(seller_url="http://test-seller")
+    caps = {
+        "seller_address": "0xSELLER_TEST",
+        "supported_schemas": ["other_schema"],
+    }
+    with pytest.raises(RuntimeError, match="does not support"):
+        await agent.negotiate_mandate(seller_capabilities=caps)
+
+
+def test_negotiation_result_dataclass():
+    """NegotiationResult can be constructed."""
+    result = NegotiationResult(
+        seller_capabilities={"seller_address": "0xA"},
+        mandate={"max_price": "100000"},
+        mandate_id="0xMID",
+        seller_accepted=True,
+        summary="test",
+    )
+    assert result.seller_accepted
+    assert result.mandate_id == "0xMID"

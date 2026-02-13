@@ -1,10 +1,12 @@
 """Buyer agent HTTP client — handles 402 challenge and paid request flow.
 
 This module encapsulates the autonomous buyer's interaction with the SLA-Pay gateway:
-1. Send unpaid request → receive 402 with payment details
-2. Generate payment authorization
-3. Send paid request → receive response with receipt
-4. Verify receipt invariants (fail-closed)
+1. Discover seller capabilities
+2. Negotiate mandate (construct + submit for seller acceptance)
+3. Send unpaid request → receive 402 with payment details
+4. Generate payment authorization
+5. Send paid request → receive response with receipt
+6. Verify receipt invariants (fail-closed)
 """
 
 from __future__ import annotations
@@ -12,14 +14,44 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
+from gateway.app.hashing import compute_mandate_id
 from gateway.app.x402 import create_payment_token
 
 logger = logging.getLogger("buyer-agent")
+
+# Default mandate template matching PROJECT.md
+DEFAULT_MANDATE_TEMPLATE: dict[str, Any] = {
+    "version": "1.0",
+    "max_price": "100000",
+    "base_pay": "60000",
+    "bonus_rules": {
+        "type": "latency_tiers",
+        "tiers": [
+            {"lte_ms": 2000, "payout": "100000"},
+            {"lte_ms": 5000, "payout": "80000"},
+            {"lte_ms": 999999999, "payout": "60000"},
+        ],
+    },
+    "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
+    "timeout_ms": 8000,
+    "dispute": {"window_seconds": 600, "bond_amount": "50000"},
+}
+
+
+@dataclass
+class NegotiationResult:
+    """Result of the negotiation phase."""
+
+    seller_capabilities: dict[str, Any]
+    mandate: dict[str, Any]
+    mandate_id: str
+    seller_accepted: bool
+    summary: str
 
 
 @dataclass
@@ -51,14 +83,88 @@ class BuyerAgent:
     def __init__(
         self,
         gateway_url: str = "http://localhost:8000",
+        seller_url: str = "http://localhost:8001",
         buyer_address: str = "0xBUYER_AGENT_0000000000000000000000000001",
         max_price: str = "100000",
         timeout: float = 30.0,
     ) -> None:
         self.gateway_url = gateway_url.rstrip("/")
+        self.seller_url = seller_url.rstrip("/")
         self.buyer_address = buyer_address
         self.max_price = max_price
         self.timeout = timeout
+        self.negotiation: NegotiationResult | None = None
+
+    async def discover_seller(self) -> dict[str, Any]:
+        """Discover seller capabilities via GET /seller/capabilities."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(f"{self.seller_url}/seller/capabilities")
+            if resp.status_code != 200:
+                raise RuntimeError(f"Seller capabilities unavailable: {resp.status_code}")
+            return resp.json()
+
+    async def negotiate_mandate(
+        self,
+        seller_capabilities: dict[str, Any] | None = None,
+    ) -> NegotiationResult:
+        """Negotiate a mandate: build from template, submit to seller for acceptance.
+
+        1. Discover seller capabilities (if not provided)
+        2. Construct mandate from buyer's template + seller info
+        3. Submit to seller POST /seller/mandates/accept
+        4. Return negotiation result
+        """
+        if seller_capabilities is None:
+            seller_capabilities = await self.discover_seller()
+
+        seller_address = seller_capabilities.get("seller_address", "")
+        supported_schemas = seller_capabilities.get("supported_schemas", [])
+
+        # Build mandate from template
+        mandate = {**DEFAULT_MANDATE_TEMPLATE}
+        mandate["buyer"] = self.buyer_address
+        mandate["seller"] = seller_address
+        mandate["max_price"] = self.max_price
+
+        # Verify seller supports required schema
+        required_schemas = {v["schema_id"] for v in mandate.get("validators", []) if "schema_id" in v}
+        if not required_schemas.issubset(set(supported_schemas)):
+            missing = required_schemas - set(supported_schemas)
+            raise RuntimeError(f"Seller does not support required schemas: {missing}")
+
+        # Compute mandate ID
+        mandate_id = compute_mandate_id(mandate)
+        mandate["mandate_id"] = mandate_id
+
+        # Submit to seller for acceptance
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(
+                f"{self.seller_url}/seller/mandates/accept",
+                json=mandate,
+            )
+
+        accepted = False
+        if resp.status_code == 200:
+            accept_data = resp.json()
+            accepted = accept_data.get("accepted", False)
+
+        summary = (
+            f"Negotiation complete. "
+            f"Seller={seller_address}, LLM={seller_capabilities.get('llm_model', 'unknown')}. "
+            f"Mandate max_price={mandate['max_price']}, schemas={list(required_schemas)}. "
+            f"Seller accepted={accepted}."
+        )
+
+        self.negotiation = NegotiationResult(
+            seller_capabilities=seller_capabilities,
+            mandate=mandate,
+            mandate_id=mandate_id,
+            seller_accepted=accepted,
+            summary=summary,
+        )
+
+        logger.info("Negotiation: %s", summary)
+        return self.negotiation
 
     def _make_payment_header(self, path: str = "/v1/call") -> dict[str, str]:
         """Create x402-compatible payment header."""
