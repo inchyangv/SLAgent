@@ -26,6 +26,7 @@ contracts/broadcast/
 
 # Local data (runtime DB / exports)
 data/
+!data/tool_catalog.json
 
 # Local-only guides
 DEMO.md

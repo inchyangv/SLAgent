@@ -1,0 +1,30 @@
+{
+  "catalog_version": "1.0",
+  "description": "SLAgent-402 paid tool catalog for x402 agentic tool chain demo",
+  "tools": [
+    {
+      "tool_id": "data_lookup",
+      "name": "Invoice Data Lookup",
+      "description": "Fetch structured invoice data from LLM-powered seller",
+      "endpoint": "/seller/call",
+      "price": "50000",
+      "max_latency_ms": 5000,
+      "quality": "standard",
+      "schema_id": "invoice_v1",
+      "mode": "fast",
+      "offer_id": "offer_bronze_v1"
+    },
+    {
+      "tool_id": "report_summarize",
+      "name": "Invoice Report Summarization",
+      "description": "Analyze and summarize invoice data with premium SLA",
+      "endpoint": "/seller/call",
+      "price": "80000",
+      "max_latency_ms": 3000,
+      "quality": "premium",
+      "schema_id": "invoice_v1",
+      "mode": "fast",
+      "offer_id": "offer_silver_v1"
+    }
+  ]
+}

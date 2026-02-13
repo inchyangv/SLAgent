@@ -1398,7 +1398,7 @@ gateway에 데모 전용 orchestration API를 추가한다.
 ---
 
 ## T-146 — x402 Agentic Tool Chain (2+ Paid Steps + CDP Wallet + Budgeting)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-040, T-121, T-122, T-137
 
@@ -1434,6 +1434,15 @@ Meet the x402 track with an explicit multi-step paid tool chain.
 - CDP Wallet usage is evidenced in config/logs/screenshots
 - Per-step spend + total spend + budget reasoning are logged and exportable
 - README/DEMO docs include run steps and sample output
+
+### Completion Notes
+- data/tool_catalog.json: 2 paid tools (data_lookup $0.05, report_summarize $0.08) with price/latency/quality
+- buyer_agent/cdp_wallet.py: CDPWallet adapter (cdp_local mode, sign_payment, sign_receipt_hash, audit status)
+- buyer_agent/tools.py: ToolChainExecutor (discover→decide→pay→outcome), BudgetManager, per-step StepSpend tracking
+- scripts/run_x402_chain_demo.py: demo script with 5-step output (catalog, CDP wallet, budget, chain, spend report + JSON export)
+- 15 new tests: catalog, budget (afford/exceed/max_step/spend/summary), CDP wallet (init/status/sign), chain (single/2-step/budget-abort/export/max-step-abort)
+- 229 total tests passing
+- Validate: `pytest buyer_agent/tests/test_tools.py -v`
 
 ---
 
