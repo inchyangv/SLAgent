@@ -43,11 +43,13 @@ forge test -v
 Seller + Gateway를 각각 띄웁니다.
 
 ```bash
-# Terminal 1
+# Terminal 1: Gemini Seller (or fallback without API key)
 source .venv/bin/activate
-uvicorn gateway.demo_seller.main:app --port 8001  # 더미 seller(LLM 아님)
+export GEMINI_API_KEY="..."          # 없으면 자동으로 결정적 fallback 사용
+# export SELLER_FALLBACK="true"     # 명시적 fallback 모드
+uvicorn seller.main:app --port 8001
 
-# Terminal 2
+# Terminal 2: Gateway
 source .venv/bin/activate
 uvicorn gateway.app.main:app --port 8000
 ```
@@ -58,6 +60,8 @@ uvicorn gateway.app.main:app --port 8000
 source .venv/bin/activate
 python scripts/run_demo.py
 ```
+
+대시보드: `http://localhost:8000/dashboard/console.html`
 
 ## SKALE 테스트넷으로 실행 (Live Chain)
 
@@ -132,11 +136,13 @@ uvicorn gateway.app.main:app --port 8000
 ### 3) Seller + 데모 스크립트 실행
 
 ```bash
-# Terminal 1
+# Terminal 1: Gemini Seller
 source .venv/bin/activate
-uvicorn gateway.demo_seller.main:app --port 8001  # 더미 seller(LLM 아님). 데모는 Gemini seller로 교체 권장
+export GEMINI_API_KEY="..."
+export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
+uvicorn seller.main:app --port 8001
 
-# Terminal 3
+# Terminal 3: Demo runner
 source .venv/bin/activate
 export BUYER_ADDRESS="0x1111111111111111111111111111111111111111"
 export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
@@ -165,16 +171,9 @@ cast send --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" \
 
 ## 대시보드
 
-가장 빠른 방법: `dashboard/index.html`을 브라우저로 엽니다.
-
-브라우저가 `file://`에서 fetch를 막으면 간단히 서빙해서 봅니다.
-
-```bash
-cd dashboard
-python3 -m http.server 5173
-```
-
-그리고 `http://localhost:5173/index.html`로 접속합니다.
+Gateway가 실행 중이면 same-origin으로 접속 가능합니다 (CORS 설정 불필요):
+- Demo Console: `http://localhost:8000/dashboard/console.html`
+- Receipt Ledger: `http://localhost:8000/dashboard/index.html`
 
 ## PAYMENT_MODE 옵션
 

@@ -99,11 +99,21 @@ uvicorn gateway.app.main:app --port 8000
 
 ## 3. Seller(Gemini) 실행
 
-이 레포의 `gateway/demo_seller`는 더미 JSON이라서 LLM을 쓰지 않습니다.
-데모에서는 Gemini를 사용하는 Seller를 띄우고, `SELLER_UPSTREAM_URL`을 그 주소로 맞춥니다.
+```bash
+source .venv/bin/activate
+export GEMINI_API_KEY="..."          # Google Gemini API key
+export SELLER_ADDRESS="0x..."        # seller의 EVM 주소
+# GEMINI_API_KEY가 없으면 SELLER_FALLBACK=true로 결정적 응답 사용 가능
+# export SELLER_FALLBACK="true"
 
-Seller는 `POST /seller/call`을 제공하고, 응답 JSON은 `invoice_v1`을 만족해야 합니다:
-- 스키마: `gateway/app/validators/schemas/invoice_v1.json`
+uvicorn seller.main:app --port 8001
+```
+
+Seller 서비스(코드: `seller/main.py`)는 Google Gemini로 invoice를 생성합니다:
+- `GET /seller/capabilities` — LLM 모델/사용가능 여부 확인
+- `POST /seller/call?mode=fast|slow|invalid` — Gemini로 작업 수행
+- 응답 JSON은 `invoice_v1` 스키마를 만족해야 합니다: `gateway/app/validators/schemas/invoice_v1.json`
+- LLM 사용 증거: 응답 헤더 `X-LLM-Model`, `X-LLM-Provider`
 
 ## 4. 데모 실행(3 시나리오)
 
@@ -149,12 +159,12 @@ export SLA_TOKEN_VERSION=""
 
 ## 대시보드
 
-`dashboard/index.html`을 열어서 receipt ledger를 확인합니다.
+Gateway가 실행 중이면 same-origin으로 접속 가능합니다:
+- Demo Console: `http://localhost:8000/dashboard/console.html`
+- Receipt Ledger: `http://localhost:8000/dashboard/index.html`
 
-브라우저가 `file://` fetch를 막으면:
-```bash
-cd dashboard
-python3 -m http.server 5173
-```
-
-그리고 `http://localhost:5173/index.html`로 접속합니다.
+대시보드 기능:
+- SLA 오퍼 선택 (Bronze/Silver/Gold)
+- 시뮬레이터 컨트롤 (레이턴시 슬라이더, 실패 토글)
+- Receipt 테이블 (breach reasons 표시)
+- 이벤트 타임라인 (SLA 위반 필터)

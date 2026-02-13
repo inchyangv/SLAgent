@@ -7,8 +7,8 @@ Runs three scenarios against the gateway:
 3. Invalid output  → zero payout (full refund)
 
 Prerequisites:
-    # Terminal 1: Start demo seller
-    uvicorn gateway.demo_seller.main:app --port 8001
+    # Terminal 1: Start Gemini seller (or set SELLER_FALLBACK=true for local testing)
+    GEMINI_API_KEY="..." uvicorn seller.main:app --port 8001
 
     # Terminal 2: Start gateway
     uvicorn gateway.app.main:app --port 8000
@@ -145,6 +145,9 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     receipt_hash = data.get("receipt_hash", "")
     tx_hash = data.get("tx_hash")
 
+    # LLM evidence: check seller response headers (forwarded via gateway response)
+    breach_reasons = data.get("breach_reasons", [])
+
     print(f"\n  Results:")
     print(f"    request_id:       {request_id}")
     print(f"    latency_ms:       {metrics.get('latency_ms', '-')}")
@@ -154,6 +157,8 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     print(f"    refund:           {refund} ({refund/1_000_000:.6f} USDC)")
     print(f"    receipt_hash:     {receipt_hash[:20]}...")
     print(f"    tx_hash:          {tx_hash or 'mock (no chain)'}")
+    if breach_reasons:
+        print(f"    breach_reasons:   {', '.join(breach_reasons)}")
 
     # Verify expected payout range
     lo, hi = scenario["expected_payout_range"]
@@ -258,9 +263,26 @@ def main() -> None:
     except httpx.ConnectError:
         print(f"\nERROR: Cannot connect to gateway at {GATEWAY_URL}")
         print("  Start the services first:")
-        print("    uvicorn gateway.demo_seller.main:app --port 8001")
+        print("    GEMINI_API_KEY=... uvicorn seller.main:app --port 8001")
         print("    uvicorn gateway.app.main:app --port 8000")
         sys.exit(1)
+
+    # Check seller capabilities (LLM evidence)
+    try:
+        caps = client.get(f"{SELLER_URL}/seller/capabilities")
+        if caps.status_code == 200:
+            caps_data = caps.json()
+            llm_provider = caps_data.get("llm_provider", "unknown")
+            llm_model = caps_data.get("llm_model", "unknown")
+            llm_available = caps_data.get("llm_available", False)
+            seller_type = "Gemini LLM" if llm_available else "Fallback (deterministic)"
+            print(f"✓ Seller: {seller_type} ({llm_provider}/{llm_model})")
+            if not llm_available:
+                print("  ⚠ GEMINI_API_KEY not set — using deterministic fallback responses")
+        else:
+            print(f"✓ Seller at {SELLER_URL} (capabilities endpoint not available)")
+    except httpx.ConnectError:
+        print(f"  ⚠ Cannot reach seller at {SELLER_URL} — gateway will proxy to upstream")
 
     # Run scenarios
     results = []
