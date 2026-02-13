@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,7 +21,7 @@ from typing import Any
 import httpx
 
 from gateway.app.hashing import compute_mandate_id
-from gateway.app.x402 import create_payment_token
+from gateway.app.x402 import create_payment_token, create_x402_payment
 
 logger = logging.getLogger("buyer-agent")
 
@@ -170,7 +171,36 @@ class BuyerAgent:
         return self.negotiation
 
     def _make_payment_header(self, path: str = "/v1/call") -> dict[str, str]:
-        """Create x402-compatible payment header."""
+        """Create payment header based on PAYMENT_MODE."""
+        payment_mode = os.getenv("PAYMENT_MODE", "hmac")
+
+        if payment_mode == "x402":
+            if not self.buyer_private_key:
+                raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
+
+            chain_id = int(os.getenv("CHAIN_ID", "103698795"))
+            asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
+            token_name = os.getenv("SLA_TOKEN_NAME", "USDC")
+            token_version = os.getenv("SLA_TOKEN_VERSION", "")
+            # payTo should match seller EVM address used by gateway challenge payload
+            to_address = (
+                os.getenv("SELLER_ADDRESS", "")
+                or (self.negotiation.mandate.get("seller", "") if self.negotiation else "")
+                or "0x" + "2" * 40
+            )
+
+            header_val = create_x402_payment(
+                private_key=self.buyer_private_key,
+                from_address=self.buyer_address,
+                to_address=to_address,
+                value=self.max_price,
+                asset=asset,
+                chain_id=chain_id,
+                token_name=token_name,
+                token_version=token_version,
+            )
+            return {"X-PAYMENT": header_val}
+
         nonce = str(int(time.time() * 1000))
         token = create_payment_token(
             path=path,
