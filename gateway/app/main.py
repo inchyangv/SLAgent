@@ -56,6 +56,10 @@ if _DEMO_CORS:
 from gateway.app.a2a.routes import router as a2a_router
 app.include_router(a2a_router)
 
+# BITE v2 encrypted conditional settlement routes
+from gateway.app.bite_v2_routes import router as bite_router
+app.include_router(bite_router)
+
 # Default mandate for demo fallback (matches PROJECT.md)
 DEFAULT_MANDATE = {
     "max_price": "100000",

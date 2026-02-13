@@ -1488,7 +1488,7 @@ All steps use A2A/AP2 envelopes and leave audit-ready records.
 ---
 
 ## T-148 — BITE v2 Encrypted Conditional Settlement (Privacy + Trigger)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-010, T-050, T-138
 
@@ -1516,6 +1516,18 @@ only when conditions are met. The demo must show why privacy matters.
 - Logs show encrypt → condition check → decrypt/settle → receipt
 - Failure path shows no decrypt and no settlement
 - Submission includes BITE v2 evidence (logs/screenshots/code locations)
+
+### Completion Notes
+- gateway/app/bite_v2.py: BiteV2Engine with encrypt→condition_check→decrypt/settle lifecycle
+  - AES-GCM encryption (Fernet) with base64 fallback
+  - SLA + budget condition evaluators (deterministic)
+  - State machine: ENCRYPTED→DECRYPTED→SETTLED or ENCRYPTED→CONDITION_FAILED
+- gateway/app/bite_v2_routes.py: REST API (POST /v1/bite/encrypt, /evaluate/{id}, /settle/{id}, GET /payloads)
+- gateway/app/main.py: BITE v2 router registered
+- Event ledger: bite_v2.encrypted, .decrypted, .condition_failed, .settled
+- 19 new tests: 7 condition evaluator, 6 engine unit, 6 API integration (success + failure paths)
+- 266 total tests passing
+- Validate: `pytest gateway/tests/test_bite_v2.py -v`
 
 ---
 
