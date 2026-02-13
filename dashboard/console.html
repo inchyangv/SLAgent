@@ -151,6 +151,22 @@
             <div class="log-entry info">Console ready. Click Refresh All to start.</div>
         </div>
     </div>
+
+    <!-- History/Timeline (full width) -->
+    <div class="card card-full">
+        <h2>Event Timeline</h2>
+        <div class="row" style="margin-bottom:6px">
+            <input id="timeline-search" placeholder="request_id or mandate_id" style="width:220px">
+            <button onclick="fetchTimeline()">Search</button>
+            <button onclick="fetchTimeline('all')">All Events</button>
+            <button class="danger" onclick="fetchTimeline('violation')">SLA Violations Only</button>
+            <span style="flex:1"></span>
+            <span id="timeline-count" style="font-size:0.75rem;color:#888"></span>
+        </div>
+        <div id="timeline-body" style="max-height:300px;overflow-y:auto">
+            <div class="empty">Search by request_id or click All Events</div>
+        </div>
+    </div>
 </div>
 
 <!-- Detail Modal -->
@@ -416,6 +432,72 @@
             btn.disabled = false;
             btn.textContent = 'Run Demo';
         }
+    }
+
+    // ── Event Timeline ──
+    const VIOLATION_KINDS = ['validation.schema_fail', 'execution.upstream_error', 'pricing'];
+    const KIND_COLORS = {
+        'payment': '#4a9eff', 'negotiation': '#9c27b0', 'execution': '#ff9800',
+        'validation': '#4caf50', 'pricing': '#2196f3', 'receipt': '#607d8b',
+        'chain': '#ff5722', 'attestation': '#8bc34a',
+    };
+
+    async function fetchTimeline(mode) {
+        const search = document.getElementById('timeline-search').value.trim();
+        let url = `${gw()}/v1/events?limit=200`;
+        if (mode === 'all') {
+            // no filter
+        } else if (mode === 'violation') {
+            url += '&kind=validation.schema_fail';  // will also check pricing for non-full
+        } else if (search) {
+            // Could be request_id or mandate_id
+            url += `&request_id=${encodeURIComponent(search)}`;
+        } else {
+            return;
+        }
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            let events = data.events || [];
+            // For violation mode, also fetch pricing events and filter
+            if (mode === 'violation') {
+                const resp2 = await fetch(`${gw()}/v1/events?limit=200`);
+                const all = await resp2.json();
+                events = (all.events || []).filter(e =>
+                    e.kind.includes('fail') || e.kind.includes('error') ||
+                    (e.kind === 'pricing.computed' && e.data?.payout < parseInt(e.data?.max_price || '999999'))
+                );
+            }
+            renderTimeline(events);
+            addLog(`Timeline: ${events.length} events`, 'ok');
+        } catch (e) {
+            addLog(`Timeline error: ${e.message}`, 'err');
+        }
+    }
+
+    function renderTimeline(events) {
+        const el = document.getElementById('timeline-body');
+        document.getElementById('timeline-count').textContent = `${events.length} events`;
+        if (events.length === 0) {
+            el.innerHTML = '<div class="empty">No events found</div>';
+            return;
+        }
+        el.innerHTML = events.map(e => {
+            const kindBase = e.kind.split('.')[0];
+            const color = KIND_COLORS[kindBase] || '#888';
+            const ts = e.ts_iso || new Date(e.ts * 1000).toISOString().slice(11, 19);
+            const dataStr = Object.entries(e.data || {}).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(', ');
+            const ids = [e.request_id, e.mandate_id].filter(Boolean).map(id =>
+                `<span class="mono" style="font-size:0.65rem;color:#555">${id.slice(0,12)}...</span>`
+            ).join(' ');
+            return `<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px solid #1a1a1a;font-size:0.78rem">
+                <span style="color:#555;min-width:60px">${ts}</span>
+                <span class="badge" style="background:${color}22;color:${color};min-width:100px">${e.kind}</span>
+                <span style="color:#888;min-width:50px">${e.actor}</span>
+                <span style="color:#bbb;flex:1">${dataStr}</span>
+                ${ids}
+            </div>`;
+        }).join('');
     }
 
     // Auto-fetch on load
