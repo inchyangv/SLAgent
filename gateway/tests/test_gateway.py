@@ -369,3 +369,59 @@ def test_dashboard_index_served():
     resp = client.get("/dashboard/index.html")
     assert resp.status_code == 200
     assert "SLA-Pay" in resp.text
+
+
+# --- Offer Catalog tests (T-143) ---
+
+
+def test_list_offers():
+    """GET /v1/demo/offers returns Bronze, Silver, Gold presets."""
+    resp = client.get("/v1/demo/offers")
+    assert resp.status_code == 200
+    offers = resp.json()["offers"]
+    assert len(offers) == 3
+    names = [o["name"] for o in offers]
+    assert "Bronze" in names
+    assert "Silver" in names
+    assert "Gold" in names
+
+
+def test_get_offer_by_id():
+    """GET /v1/demo/offers/{id} returns the specific offer."""
+    resp = client.get("/v1/demo/offers/offer_silver_v1")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Silver"
+    assert data["max_price"] == "100000"
+
+
+def test_get_offer_not_found():
+    resp = client.get("/v1/demo/offers/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_offer_creates_valid_mandate():
+    """Registering a mandate from an offer preset should work."""
+    # Get gold offer
+    resp = client.get("/v1/demo/offers/offer_gold_v1")
+    offer = resp.json()
+    # Register as mandate
+    mandate = {
+        "max_price": offer["max_price"],
+        "base_pay": offer["base_pay"],
+        "bonus_rules": offer["bonus_rules"],
+        "validators": offer["validators"],
+        "offer_id": offer["offer_id"],
+    }
+    resp2 = client.post("/v1/mandates", json=mandate)
+    assert resp2.status_code == 200
+    data = resp2.json()
+    assert data["mandate_id"].startswith("0x")
+    assert data["max_price"] == "200000"
+
+
+def test_offers_have_distinct_pricing():
+    """Each offer tier should produce different max_price."""
+    resp = client.get("/v1/demo/offers")
+    prices = {o["name"]: o["max_price"] for o in resp.json()["offers"]}
+    assert int(prices["Bronze"]) < int(prices["Silver"]) < int(prices["Gold"])

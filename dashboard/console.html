@@ -92,9 +92,18 @@
         <div style="margin-top:8px"><button onclick="fetchCapabilities()">Fetch</button></div>
     </div>
 
-    <!-- Mandates -->
+    <!-- SLA Offers + Mandates -->
     <div class="card">
-        <h2>Active Mandates</h2>
+        <h2>SLA Offer Catalog</h2>
+        <div class="row">
+            <select id="offer-select" style="flex:1">
+                <option value="">-- Select SLA Offer --</option>
+            </select>
+            <button class="primary" onclick="selectOffer()">Negotiate</button>
+            <button onclick="fetchOffers()">Load</button>
+        </div>
+        <div id="offer-detail" style="font-size:0.78rem;color:#888;margin-top:6px"></div>
+        <h2 style="margin-top:12px">Active Mandates</h2>
         <div id="mandate-list" class="empty" style="padding:12px">No mandates yet</div>
         <div style="margin-top:8px"><button onclick="fetchMandates()">Refresh</button></div>
     </div>
@@ -192,6 +201,82 @@
         const ts = new Date().toLocaleTimeString();
         log.innerHTML += `<div class="log-entry ${cls}">[${ts}] ${msg}</div>`;
         log.scrollTop = log.scrollHeight;
+    }
+
+    // ── SLA Offer Catalog ──
+    let cachedOffers = [];
+
+    async function fetchOffers() {
+        try {
+            const resp = await fetch(`${gw()}/v1/demo/offers`);
+            const data = await resp.json();
+            cachedOffers = data.offers || [];
+            const sel = document.getElementById('offer-select');
+            sel.innerHTML = '<option value="">-- Select SLA Offer --</option>';
+            cachedOffers.forEach(o => {
+                const mp = (parseInt(o.max_price)/1e6).toFixed(2);
+                sel.innerHTML += `<option value="${o.offer_id}">${o.name} (max ${mp} USDC)</option>`;
+            });
+            document.getElementById('offer-detail').textContent = `${cachedOffers.length} offers loaded`;
+            addLog(`${cachedOffers.length} SLA offers loaded`, 'ok');
+        } catch (e) {
+            addLog(`Offers error: ${e.message}`, 'err');
+        }
+    }
+
+    document.getElementById('offer-select')?.addEventListener('change', function() {
+        const offer = cachedOffers.find(o => o.offer_id === this.value);
+        const el = document.getElementById('offer-detail');
+        if (!offer) { el.textContent = ''; return; }
+        const tiers = (offer.bonus_rules?.tiers || []).map(t =>
+            `≤${t.lte_ms}ms→${(parseInt(t.payout)/1e6).toFixed(2)}`
+        ).join(', ');
+        el.innerHTML = `<strong>${offer.name}</strong>: ${offer.description}<br>` +
+            `Tiers: ${tiers} | Base: ${(parseInt(offer.base_pay)/1e6).toFixed(2)} USDC`;
+    });
+
+    async function selectOffer() {
+        const offerId = document.getElementById('offer-select').value;
+        if (!offerId) { addLog('Select an offer first', 'err'); return; }
+        const offer = cachedOffers.find(o => o.offer_id === offerId);
+        if (!offer) return;
+
+        // Build mandate from offer + seller info
+        const mandate = {
+            version: '1.0',
+            offer_id: offer.offer_id,
+            max_price: offer.max_price,
+            base_pay: offer.base_pay,
+            bonus_rules: offer.bonus_rules,
+            validators: offer.validators,
+            timeout_ms: offer.timeout_ms,
+            dispute: offer.dispute,
+        };
+
+        try {
+            // Register mandate on gateway
+            const resp = await fetch(`${gw()}/v1/mandates`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify(mandate),
+            });
+            const data = await resp.json();
+            addLog(`Mandate registered from ${offer.name}: ${data.mandate_id?.slice(0,12)}...`, 'ok');
+
+            // Try to accept mandate on seller
+            try {
+                await fetch(`${sl()}/seller/mandates/accept`, {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({...mandate, mandate_id: data.mandate_id}),
+                });
+                addLog(`Seller accepted mandate (${offer.name})`, 'ok');
+            } catch (e) {
+                addLog(`Seller accept skipped: ${e.message}`, 'info');
+            }
+
+            await fetchMandates();
+        } catch (e) {
+            addLog(`Negotiate error: ${e.message}`, 'err');
+        }
     }
 
     // ── Seller Capabilities ──
@@ -410,6 +495,7 @@
     async function refreshAll() {
         addLog('Refreshing all...');
         await Promise.allSettled([
+            fetchOffers(),
             fetchCapabilities(),
             fetchMandates(),
             fetchReceipts(),

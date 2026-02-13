@@ -646,6 +646,26 @@ async def export_events() -> JSONResponse:
     )
 
 
+# --- Demo Offers API (SLA offer catalog) ---
+
+from gateway.app.offers import get_offer, get_offers
+
+
+@app.get("/v1/demo/offers")
+async def list_offers() -> JSONResponse:
+    """List available SLA offer presets (Bronze / Silver / Gold)."""
+    return JSONResponse(content={"offers": get_offers()})
+
+
+@app.get("/v1/demo/offers/{offer_id}")
+async def get_offer_detail(offer_id: str) -> JSONResponse:
+    """Get a specific SLA offer by ID."""
+    offer = get_offer(offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404, detail=f"Offer not found: {offer_id}")
+    return JSONResponse(content=offer)
+
+
 # --- Demo Run API (server-side buyer agent orchestration) ---
 
 import os as _os
