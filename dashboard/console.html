@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SLA-Pay v2 Demo Console</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; background: #0a0a0a; color: #e0e0e0; padding: 16px; font-size: 14px; }
+        h1 { font-size: 1.3rem; margin-bottom: 4px; color: #fff; }
+        h2 { font-size: 1rem; color: #999; margin-bottom: 10px; border-bottom: 1px solid #222; padding-bottom: 6px; }
+        .subtitle { color: #888; margin-bottom: 16px; font-size: 0.85rem; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .card { background: #111; border: 1px solid #222; border-radius: 6px; padding: 14px; }
+        .card-full { grid-column: 1 / -1; }
+        button { background: #1a1a2e; border: 1px solid #333; color: #e0e0e0; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-size: 0.8rem; }
+        button:hover { background: #16213e; border-color: #555; }
+        button.primary { background: #0f3460; border-color: #4a9eff; color: #4a9eff; }
+        button.danger { background: #3b0d0d; border-color: #f44; color: #f44; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        input, select { background: #1a1a2e; border: 1px solid #333; color: #e0e0e0; padding: 6px 10px; border-radius: 4px; font-size: 0.8rem; }
+        input { width: 100%; }
+        label { font-size: 0.75rem; color: #888; display: block; margin-bottom: 3px; }
+        .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.72rem; font-weight: 600; }
+        .badge-pass { background: #0d3b0d; color: #4caf50; }
+        .badge-fail { background: #3b0d0d; color: #f44336; }
+        .badge-full { background: #0d2a3b; color: #2196f3; }
+        .badge-partial { background: #3b2a0d; color: #ff9800; }
+        .badge-zero { background: #3b0d0d; color: #f44336; }
+        .badge-info { background: #1a1a3e; color: #888; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th { text-align: left; padding: 8px 10px; background: #0a0a0a; border-bottom: 2px solid #333; color: #999; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+        td { padding: 7px 10px; border-bottom: 1px solid #1a1a1a; }
+        tr:hover { background: #151515; cursor: pointer; }
+        .mono { font-family: monospace; font-size: 0.75rem; }
+        .hash { font-family: monospace; font-size: 0.72rem; color: #666; }
+        .stats { display: flex; gap: 10px; margin-bottom: 12px; }
+        .stat-card { background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px 14px; min-width: 110px; text-align: center; }
+        .stat-value { font-size: 1.3rem; font-weight: 700; color: #fff; }
+        .stat-label { font-size: 0.7rem; color: #666; margin-top: 2px; }
+        pre { background: #0a0a0a; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.75rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .kv { display: grid; grid-template-columns: 130px 1fr; gap: 2px 8px; font-size: 0.8rem; }
+        .kv dt { color: #888; }
+        .kv dd { color: #e0e0e0; font-family: monospace; word-break: break-all; }
+        .empty { text-align: center; padding: 24px; color: #666; }
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; }
+        #modal-content { background: #111; border: 1px solid #333; border-radius: 8px; max-width: 720px; margin: 30px auto; padding: 20px; max-height: 85vh; overflow-y: auto; }
+        .close-btn { float: right; cursor: pointer; color: #999; font-size: 1.2rem; }
+        .close-btn:hover { color: #fff; }
+        .log { background: #050505; border: 1px solid #1a1a1a; border-radius: 4px; padding: 8px; font-family: monospace; font-size: 0.75rem; max-height: 160px; overflow-y: auto; color: #888; }
+        .log-entry { margin-bottom: 2px; }
+        .log-entry.ok { color: #4caf50; }
+        .log-entry.err { color: #f44336; }
+        .log-entry.info { color: #888; }
+        .attest-dots { display: flex; gap: 4px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #333; }
+        .dot.signed { background: #4caf50; }
+    </style>
+</head>
+<body>
+
+<h1>SLA-Pay v2 Demo Console</h1>
+<p class="subtitle">Pay by proof, not upfront — Negotiation + Monitoring</p>
+
+<!-- Config Bar -->
+<div class="row" style="margin-bottom:14px">
+    <label style="display:inline;margin:0">Gateway:</label>
+    <input id="gateway-url" value="http://localhost:8000" style="width:240px">
+    <label style="display:inline;margin:0">Seller:</label>
+    <input id="seller-url" value="http://localhost:8001" style="width:240px">
+    <button onclick="refreshAll()">Refresh All</button>
+</div>
+
+<!-- Stats -->
+<div class="stats" id="stats">
+    <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Requests</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-pass">0</div><div class="stat-label">Pass</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-fail">0</div><div class="stat-label">Fail</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-avg-lat">-</div><div class="stat-label">Avg ms</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-attest">0</div><div class="stat-label">3/3 Attest</div></div>
+</div>
+
+<div class="grid">
+    <!-- Seller Capabilities -->
+    <div class="card">
+        <h2>Seller Capabilities</h2>
+        <div id="seller-caps" class="kv">
+            <dt>Status</dt><dd><span class="badge badge-info">Not fetched</span></dd>
+        </div>
+        <div style="margin-top:8px"><button onclick="fetchCapabilities()">Fetch</button></div>
+    </div>
+
+    <!-- Mandates -->
+    <div class="card">
+        <h2>Active Mandates</h2>
+        <div id="mandate-list" class="empty" style="padding:12px">No mandates yet</div>
+        <div style="margin-top:8px"><button onclick="fetchMandates()">Refresh</button></div>
+    </div>
+
+    <!-- Receipts Table (full width) -->
+    <div class="card card-full">
+        <h2>Receipts</h2>
+        <div class="row" style="margin-bottom:6px">
+            <button class="active" data-filter="all" onclick="setFilter('all',this)">All</button>
+            <button data-filter="pass" onclick="setFilter('pass',this)">Pass</button>
+            <button data-filter="fail" onclick="setFilter('fail',this)">Fail</button>
+            <span style="flex:1"></span>
+            <button onclick="fetchReceipts()">Refresh</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Request ID</th>
+                    <th>Latency</th>
+                    <th>Valid</th>
+                    <th>Payout</th>
+                    <th>Refund</th>
+                    <th>Rule</th>
+                    <th>Attest</th>
+                    <th>Hash</th>
+                </tr>
+            </thead>
+            <tbody id="receipts-body">
+                <tr><td colspan="8" class="empty">No receipts</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Disputes -->
+    <div class="card">
+        <h2>Disputes</h2>
+        <div class="row">
+            <input id="dispute-req-id" placeholder="request_id" style="width:180px">
+            <button onclick="openDispute()">Open Dispute</button>
+        </div>
+        <div class="row" style="margin-top:4px">
+            <input id="resolve-req-id" placeholder="request_id" style="width:120px">
+            <input id="resolve-payout" placeholder="final_payout" style="width:80px">
+            <button onclick="resolveDispute()">Resolve</button>
+            <button onclick="finalizeDispute()">Finalize</button>
+        </div>
+        <div id="dispute-status" style="margin-top:8px;font-size:0.8rem;color:#888"></div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="card">
+        <h2>Activity Log</h2>
+        <div id="activity-log" class="log">
+            <div class="log-entry info">Console ready. Click Refresh All to start.</div>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div id="modal" onclick="if(event.target.id==='modal')closeModal()">
+    <div id="modal-content">
+        <span class="close-btn" onclick="closeModal()">&times;</span>
+        <h2 id="modal-title" style="margin-bottom:10px">Receipt Detail</h2>
+        <div id="modal-attest" style="margin-bottom:10px"></div>
+        <pre id="modal-json"></pre>
+    </div>
+</div>
+
+<script>
+    let allReceipts = [];
+    let currentFilter = 'all';
+    const gw = () => document.getElementById('gateway-url').value.replace(/\/$/,'');
+    const sl = () => document.getElementById('seller-url').value.replace(/\/$/,'');
+
+    function addLog(msg, cls='info') {
+        const log = document.getElementById('activity-log');
+        const ts = new Date().toLocaleTimeString();
+        log.innerHTML += `<div class="log-entry ${cls}">[${ts}] ${msg}</div>`;
+        log.scrollTop = log.scrollHeight;
+    }
+
+    // ── Seller Capabilities ──
+    async function fetchCapabilities() {
+        const el = document.getElementById('seller-caps');
+        try {
+            const resp = await fetch(`${sl()}/seller/capabilities`);
+            const data = await resp.json();
+            el.innerHTML = `
+                <dt>Address</dt><dd>${data.seller_address||'-'}</dd>
+                <dt>LLM Provider</dt><dd>${data.llm_provider||'-'}</dd>
+                <dt>LLM Model</dt><dd>${data.llm_model||'-'}</dd>
+                <dt>LLM Available</dt><dd>${data.llm_available ? '<span class="badge badge-pass">YES</span>' : '<span class="badge badge-fail">NO</span>'}</dd>
+                <dt>Schemas</dt><dd>${(data.supported_schemas||[]).join(', ')}</dd>
+                <dt>Modes</dt><dd>${(data.supported_modes||[]).join(', ')}</dd>
+            `;
+            addLog('Seller capabilities fetched', 'ok');
+        } catch (e) {
+            el.innerHTML = `<dt>Status</dt><dd><span class="badge badge-fail">Error: ${e.message}</span></dd>`;
+            addLog(`Capabilities error: ${e.message}`, 'err');
+        }
+    }
+
+    // ── Mandates ──
+    async function fetchMandates() {
+        const el = document.getElementById('mandate-list');
+        try {
+            const resp = await fetch(`${gw()}/v1/mandates`);
+            const data = await resp.json();
+            const mandates = data.mandates || [];
+            if (mandates.length === 0) {
+                el.innerHTML = '<div class="empty" style="padding:8px">No mandates</div>';
+                return;
+            }
+            el.innerHTML = mandates.map(m => {
+                const id = m.mandate_id || '-';
+                const short = id.length > 18 ? id.slice(0,10)+'...' : id;
+                const mp = m.max_price || '-';
+                return `<div style="font-size:0.8rem;margin-bottom:4px;cursor:pointer" onclick="showJSON(${JSON.stringify(JSON.stringify(m))}, 'Mandate ${short}')">
+                    <span class="mono">${short}</span> — max_price=${mp}
+                </div>`;
+            }).join('');
+            addLog(`${mandates.length} mandate(s) found`, 'ok');
+        } catch (e) {
+            el.innerHTML = `<div class="empty" style="padding:8px">Error: ${e.message}</div>`;
+        }
+    }
+
+    // ── Receipts ──
+    async function fetchReceipts() {
+        try {
+            const resp = await fetch(`${gw()}/v1/receipts?limit=100`);
+            allReceipts = await resp.json();
+            renderReceipts();
+            addLog(`${allReceipts.length} receipt(s) loaded`, 'ok');
+        } catch (e) {
+            addLog(`Receipts error: ${e.message}`, 'err');
+        }
+    }
+
+    function setFilter(f, btn) {
+        currentFilter = f;
+        document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        renderReceipts();
+    }
+
+    function renderReceipts() {
+        const tbody = document.getElementById('receipts-body');
+        let filtered = allReceipts;
+        if (currentFilter === 'pass') filtered = allReceipts.filter(r => r.validation?.overall_pass);
+        if (currentFilter === 'fail') filtered = allReceipts.filter(r => !r.validation?.overall_pass);
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="empty">No receipts</td></tr>';
+            updateStats(); return;
+        }
+
+        tbody.innerHTML = filtered.map(r => {
+            const vpass = r.validation?.overall_pass;
+            const payout = parseInt(r.pricing?.computed_payout || '0');
+            const refund = parseInt(r.pricing?.computed_refund || '0');
+            const maxP = parseInt(r.pricing?.max_price || '0');
+            const latency = r.metrics?.latency_ms ?? '-';
+            const rule = r.pricing?.rule_applied || '-';
+            const hash = r.hashes?.receipt_hash || '-';
+            const shortHash = hash.length > 14 ? hash.slice(0,8)+'...'+hash.slice(-4) : hash;
+            const attest = r.attestations || {};
+            const ac = attest.count || 0;
+            const complete = attest.complete || false;
+            const parties = attest.parties_signed || [];
+            let payBadge = 'badge-zero';
+            if (payout === maxP && maxP > 0) payBadge = 'badge-full';
+            else if (payout > 0) payBadge = 'badge-partial';
+            const attestBadge = complete ? 'badge-pass' : (ac > 0 ? 'badge-partial' : 'badge-zero');
+            const dots = ['buyer','seller','gateway'].map(role =>
+                `<div class="dot ${parties.includes(role)?'signed':''}" title="${role}"></div>`
+            ).join('');
+            return `<tr onclick="showReceipt('${r.request_id}')">
+                <td class="mono" style="font-size:0.72rem">${r.request_id}</td>
+                <td>${latency}ms</td>
+                <td><span class="badge ${vpass?'badge-pass':'badge-fail'}">${vpass?'PASS':'FAIL'}</span></td>
+                <td><span class="badge ${payBadge}">${(payout/1e6).toFixed(4)}</span></td>
+                <td class="mono">${(refund/1e6).toFixed(4)}</td>
+                <td>${rule}</td>
+                <td><div class="attest-dots">${dots}</div></td>
+                <td class="hash" title="${hash}">${shortHash}</td>
+            </tr>`;
+        }).join('');
+        updateStats();
+    }
+
+    function updateStats() {
+        document.getElementById('stat-total').textContent = allReceipts.length;
+        const passed = allReceipts.filter(r => r.validation?.overall_pass).length;
+        document.getElementById('stat-pass').textContent = passed;
+        document.getElementById('stat-fail').textContent = allReceipts.length - passed;
+        const lats = allReceipts.map(r => r.metrics?.latency_ms).filter(l => l!=null);
+        document.getElementById('stat-avg-lat').textContent = lats.length > 0 ? Math.round(lats.reduce((a,b)=>a+b,0)/lats.length) : '-';
+        const complete = allReceipts.filter(r => r.attestations?.complete).length;
+        document.getElementById('stat-attest').textContent = complete;
+    }
+
+    // ── Receipt Detail ──
+    async function showReceipt(requestId) {
+        try {
+            const resp = await fetch(`${gw()}/v1/receipts/${requestId}`);
+            const data = await resp.json();
+            document.getElementById('modal-title').textContent = `Receipt: ${requestId}`;
+            // Attestation summary
+            const attest = data.attestations || {};
+            const roles = ['buyer','seller','gateway'];
+            const parties = attest.parties_signed || [];
+            let attestHtml = '<div style="margin-bottom:8px"><strong>Attestations:</strong> ';
+            attestHtml += roles.map(r => {
+                const signed = parties.includes(r);
+                return `<span class="badge ${signed?'badge-pass':'badge-info'}">${r}: ${signed?'SIGNED':'pending'}</span>`;
+            }).join(' ');
+            attestHtml += ` <span class="badge ${attest.complete?'badge-pass':'badge-partial'}">${attest.count||0}/3</span></div>`;
+            document.getElementById('modal-attest').innerHTML = attestHtml;
+            document.getElementById('modal-json').textContent = JSON.stringify(data, null, 2);
+            document.getElementById('modal').style.display = 'block';
+        } catch (e) {
+            addLog(`Detail error: ${e.message}`, 'err');
+        }
+    }
+
+    function showJSON(jsonStr, title) {
+        document.getElementById('modal-title').textContent = title || 'Detail';
+        document.getElementById('modal-attest').innerHTML = '';
+        document.getElementById('modal-json').textContent = JSON.stringify(JSON.parse(jsonStr), null, 2);
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+    // ── Disputes ──
+    async function openDispute() {
+        const reqId = document.getElementById('dispute-req-id').value;
+        if (!reqId) return;
+        try {
+            const resp = await fetch(`${gw()}/v1/disputes/open`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({request_id: reqId}),
+            });
+            const data = await resp.json();
+            document.getElementById('dispute-status').textContent = JSON.stringify(data);
+            addLog(`Dispute opened: ${reqId}`, resp.ok ? 'ok' : 'err');
+        } catch (e) { addLog(`Dispute error: ${e.message}`, 'err'); }
+    }
+
+    async function resolveDispute() {
+        const reqId = document.getElementById('resolve-req-id').value;
+        const payout = document.getElementById('resolve-payout').value;
+        if (!reqId || !payout) return;
+        try {
+            const resp = await fetch(`${gw()}/v1/disputes/resolve`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({request_id: reqId, final_payout: parseInt(payout)}),
+            });
+            const data = await resp.json();
+            document.getElementById('dispute-status').textContent = JSON.stringify(data);
+            addLog(`Dispute resolved: ${reqId} payout=${payout}`, resp.ok ? 'ok' : 'err');
+        } catch (e) { addLog(`Resolve error: ${e.message}`, 'err'); }
+    }
+
+    async function finalizeDispute() {
+        const reqId = document.getElementById('dispute-req-id').value || document.getElementById('resolve-req-id').value;
+        if (!reqId) return;
+        try {
+            const resp = await fetch(`${gw()}/v1/disputes/finalize`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({request_id: reqId}),
+            });
+            const data = await resp.json();
+            document.getElementById('dispute-status').textContent = JSON.stringify(data);
+            addLog(`Finalized: ${reqId}`, resp.ok ? 'ok' : 'err');
+        } catch (e) { addLog(`Finalize error: ${e.message}`, 'err'); }
+    }
+
+    // ── Refresh All ──
+    async function refreshAll() {
+        addLog('Refreshing all...');
+        await Promise.allSettled([
+            fetchCapabilities(),
+            fetchMandates(),
+            fetchReceipts(),
+        ]);
+    }
+
+    // Auto-fetch on load
+    refreshAll();
+</script>
+
+</body>
+</html>
