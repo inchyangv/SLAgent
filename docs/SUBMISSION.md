@@ -95,9 +95,9 @@ Three scenarios demonstrating pay-by-performance:
 ## Hackathon Track Relevance
 
 ### SKALE Base Sepolia (BITE v2 Sandbox 2)
-- SKALE 테스트넷 환경에서 온체인 정산 흐름 재현
-- 가스 부담이 낮아 요청 단위 정산 데모에 유리
-- Escrow + delayed finalization으로 dispute 안전성 확보
+- Reproduces the full on-chain settlement flow on SKALE testnet
+- Low gas overhead makes per-request settlement demos practical
+- Escrow + delayed finalization improves dispute safety
 
 ### Coinbase x402
 - x402-compatible payment gating (402 → paid request flow)
@@ -111,9 +111,10 @@ Three scenarios demonstrating pay-by-performance:
 
 ## Contract Addresses
 
-MVP uses local/mock deployment. For live deployment:
-- Set `CHAIN_RPC_URL`, `SETTLEMENT_CONTRACT_ADDRESS`, `PAYMENT_TOKEN_ADDRESS` in `.env`
-- Deploy contracts via `forge script`
+SKALE BITE v2 Sandbox 2 deployment:
+- `SLASettlement`: `0xd5FBcF82364865E2477Aae988A3C3232Fae77756`
+- `USDC`: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- Deploy tx: `0xaba602d851e3cd18f43bc765a80f266322b0f856e052a0c4b9b1fccc864607bf`
 
 ## Screenshots
 
