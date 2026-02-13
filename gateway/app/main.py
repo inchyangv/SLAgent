@@ -249,11 +249,13 @@ async def call_endpoint(request: Request) -> JSONResponse:
         success=success,
         validation_pass=overall_pass,
     )
+    breach_reasons = list(pricing_decision.breach_reasons)
     pricing = PricingResult(
         max_price=str(pricing_decision.max_price),
         computed_payout=str(pricing_decision.payout),
         computed_refund=str(pricing_decision.refund),
         rule_applied=pricing_decision.rule_applied,
+        breach_reasons=breach_reasons,
     )
 
     receipt = build_receipt(
@@ -271,6 +273,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
         t_request_received=rm.t_request_received,
         t_first_token=rm.t_first_token,
         t_response_done=rm.t_response_done,
+        breach_reasons=breach_reasons,
     )
 
     event_store.record(
@@ -281,6 +284,20 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "rule": pricing_decision.rule_applied,
         },
     )
+
+    # Record SLA breach event if any breaches detected
+    if breach_reasons:
+        event_store.record(
+            kind="sla.breach_detected", actor="gateway", request_id=request_id,
+            mandate_id=mandate_id,
+            data={
+                "breach_reasons": breach_reasons,
+                "payout": pricing_decision.payout,
+                "max_price": pricing_decision.max_price,
+                "latency_ms": metrics.latency_ms,
+                "validation_pass": overall_pass,
+            },
+        )
     event_store.record(
         kind="receipt.hash_computed", actor="gateway", request_id=request_id,
         mandate_id=mandate_id, data={"receipt_hash": receipt.hashes.get("receipt_hash", "")},
@@ -362,6 +379,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "tx_hash": tx_hash,
             "deposit_tx_hash": deposit_tx,
             "settle_tx_hash": settle_tx,
+            "breach_reasons": breach_reasons,
         }
     )
 

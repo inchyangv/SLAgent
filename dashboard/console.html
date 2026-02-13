@@ -118,12 +118,13 @@
                     <th>Payout</th>
                     <th>Refund</th>
                     <th>Rule</th>
+                    <th>Breaches</th>
                     <th>Attest</th>
                     <th>Hash</th>
                 </tr>
             </thead>
             <tbody id="receipts-body">
-                <tr><td colspan="8" class="empty">No receipts</td></tr>
+                <tr><td colspan="9" class="empty">No receipts</td></tr>
             </tbody>
         </table>
     </div>
@@ -175,6 +176,7 @@
         <span class="close-btn" onclick="closeModal()">&times;</span>
         <h2 id="modal-title" style="margin-bottom:10px">Receipt Detail</h2>
         <div id="modal-attest" style="margin-bottom:10px"></div>
+        <div id="modal-breach" style="margin-bottom:10px"></div>
         <pre id="modal-json"></pre>
     </div>
 </div>
@@ -264,7 +266,7 @@
         if (currentFilter === 'fail') filtered = allReceipts.filter(r => !r.validation?.overall_pass);
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="empty">No receipts</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="empty">No receipts</td></tr>';
             updateStats(); return;
         }
 
@@ -288,6 +290,10 @@
             const dots = ['buyer','seller','gateway'].map(role =>
                 `<div class="dot ${parties.includes(role)?'signed':''}" title="${role}"></div>`
             ).join('');
+            const breaches = r.breach_reasons || r.pricing?.breach_reasons || [];
+            const breachHtml = breaches.length > 0
+                ? breaches.map(b => `<span class="badge badge-fail" style="font-size:0.6rem;margin:1px">${b.replace('BREACH_','')}</span>`).join('')
+                : '<span style="color:#555;font-size:0.7rem">-</span>';
             return `<tr onclick="showReceipt('${r.request_id}')">
                 <td class="mono" style="font-size:0.72rem">${r.request_id}</td>
                 <td>${latency}ms</td>
@@ -295,6 +301,7 @@
                 <td><span class="badge ${payBadge}">${(payout/1e6).toFixed(4)}</span></td>
                 <td class="mono">${(refund/1e6).toFixed(4)}</td>
                 <td>${rule}</td>
+                <td>${breachHtml}</td>
                 <td><div class="attest-dots">${dots}</div></td>
                 <td class="hash" title="${hash}">${shortHash}</td>
             </tr>`;
@@ -330,6 +337,15 @@
             }).join(' ');
             attestHtml += ` <span class="badge ${attest.complete?'badge-pass':'badge-partial'}">${attest.count||0}/3</span></div>`;
             document.getElementById('modal-attest').innerHTML = attestHtml;
+            // Breach reasons display
+            const breaches = data.breach_reasons || data.pricing?.breach_reasons || [];
+            let breachHtml = '';
+            if (breaches.length > 0) {
+                breachHtml = '<div style="margin-bottom:8px"><strong>SLA Breaches:</strong> ';
+                breachHtml += breaches.map(b => `<span class="badge badge-fail" style="margin:2px">${b}</span>`).join(' ');
+                breachHtml += '</div>';
+            }
+            document.getElementById('modal-breach').innerHTML = breachHtml;
             document.getElementById('modal-json').textContent = JSON.stringify(data, null, 2);
             document.getElementById('modal').style.display = 'block';
         } catch (e) {
@@ -439,7 +455,7 @@
     const KIND_COLORS = {
         'payment': '#4a9eff', 'negotiation': '#9c27b0', 'execution': '#ff9800',
         'validation': '#4caf50', 'pricing': '#2196f3', 'receipt': '#607d8b',
-        'chain': '#ff5722', 'attestation': '#8bc34a',
+        'chain': '#ff5722', 'attestation': '#8bc34a', 'sla': '#f44336',
     };
 
     async function fetchTimeline(mode) {
@@ -465,6 +481,7 @@
                 const all = await resp2.json();
                 events = (all.events || []).filter(e =>
                     e.kind.includes('fail') || e.kind.includes('error') ||
+                    e.kind === 'sla.breach_detected' ||
                     (e.kind === 'pricing.computed' && e.data?.payout < parseInt(e.data?.max_price || '999999'))
                 );
             }
@@ -486,7 +503,9 @@
             const kindBase = e.kind.split('.')[0];
             const color = KIND_COLORS[kindBase] || '#888';
             const ts = e.ts_iso || new Date(e.ts * 1000).toISOString().slice(11, 19);
-            const dataStr = Object.entries(e.data || {}).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(', ');
+            const breachReasons = (e.data?.breach_reasons || []);
+            const breachPills = breachReasons.map(b => `<span class="badge badge-fail" style="font-size:0.6rem">${b.replace('BREACH_','')}</span>`).join(' ');
+            const dataStr = Object.entries(e.data || {}).filter(([k]) => k !== 'breach_reasons').map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(', ');
             const ids = [e.request_id, e.mandate_id].filter(Boolean).map(id =>
                 `<span class="mono" style="font-size:0.65rem;color:#555">${id.slice(0,12)}...</span>`
             ).join(' ');
@@ -494,7 +513,7 @@
                 <span style="color:#555;min-width:60px">${ts}</span>
                 <span class="badge" style="background:${color}22;color:${color};min-width:100px">${e.kind}</span>
                 <span style="color:#888;min-width:50px">${e.actor}</span>
-                <span style="color:#bbb;flex:1">${dataStr}</span>
+                <span style="color:#bbb;flex:1">${breachPills} ${dataStr}</span>
                 ${ids}
             </div>`;
         }).join('');

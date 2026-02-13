@@ -31,6 +31,7 @@ class PricingResult(BaseModel):
     computed_payout: str
     computed_refund: str
     rule_applied: str
+    breach_reasons: list[str] = []
 
 
 class Receipt(BaseModel):
@@ -47,6 +48,7 @@ class Receipt(BaseModel):
     pricing: PricingResult | None = None
     hashes: dict[str, str] = {}
     signatures: dict[str, str] = {}
+    breach_reasons: list[str] = []
 
 
 class CallResponse(BaseModel):

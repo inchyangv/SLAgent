@@ -20,6 +20,7 @@ class PricingDecision:
     payout: int
     refund: int
     rule_applied: str
+    breach_reasons: list[str]
 
 
 def compute_payout(
@@ -38,18 +39,30 @@ def compute_payout(
         validation_pass: Whether validators passed
 
     Returns:
-        PricingDecision with payout, refund, and applied rule
+        PricingDecision with payout, refund, applied rule, and breach reasons
     """
     max_price = int(mandate["max_price"])
+    breaches: list[str] = []
 
     # Fail-closed: error or validation failure → zero payout
-    if not success or not validation_pass:
-        rule = "error" if not success else "validation_failed"
+    if not success:
+        breaches.append("BREACH_UPSTREAM_ERROR")
         return PricingDecision(
             max_price=max_price,
             payout=0,
             refund=max_price,
-            rule_applied=rule,
+            rule_applied="error",
+            breach_reasons=breaches,
+        )
+
+    if not validation_pass:
+        breaches.append("BREACH_SCHEMA_FAIL")
+        return PricingDecision(
+            max_price=max_price,
+            payout=0,
+            refund=max_price,
+            rule_applied="validation_failed",
+            breach_reasons=breaches,
         )
 
     # Apply bonus rules
@@ -62,11 +75,14 @@ def compute_payout(
     # Fallback: base_pay only
     base_pay = int(mandate.get("base_pay", "0"))
     payout = min(base_pay, max_price)
+    if payout < max_price:
+        breaches.append("BREACH_LATENCY_TIER_DOWN")
     return PricingDecision(
         max_price=max_price,
         payout=payout,
         refund=max_price - payout,
         rule_applied="base_pay_only",
+        breach_reasons=breaches,
     )
 
 
@@ -85,16 +101,23 @@ def _apply_latency_tiers(
     # Sort tiers by lte_ms to ensure deterministic evaluation
     sorted_tiers = sorted(tiers, key=lambda t: t["lte_ms"])
 
+    # Determine best possible tier (first tier = best payout)
+    best_payout = int(sorted_tiers[0]["payout"]) if sorted_tiers else max_price
+
     for tier in sorted_tiers:
         if latency_ms <= tier["lte_ms"]:
             payout = int(tier["payout"])
             # Enforce invariant: payout <= max_price
             payout = min(payout, max_price)
+            breaches: list[str] = []
+            if payout < best_payout:
+                breaches.append("BREACH_LATENCY_TIER_DOWN")
             return PricingDecision(
                 max_price=max_price,
                 payout=payout,
                 refund=max_price - payout,
                 rule_applied=f"latency_tier_lte_{tier['lte_ms']}",
+                breach_reasons=breaches,
             )
 
     # No tier matched (shouldn't happen if last tier is very large)
@@ -104,4 +127,5 @@ def _apply_latency_tiers(
         payout=0,
         refund=max_price,
         rule_applied="no_tier_matched",
+        breach_reasons=["BREACH_LATENCY_TIER_DOWN"],
     )

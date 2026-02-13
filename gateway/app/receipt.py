@@ -299,6 +299,7 @@ def build_receipt(
     t_request_received: float = 0.0,
     t_first_token: float = 0.0,
     t_response_done: float = 0.0,
+    breach_reasons: list[str] | None = None,
 ) -> Receipt:
     """Assemble a receipt with computed hashes and accurate timestamps.
 
@@ -330,6 +331,7 @@ def build_receipt(
         outcome=outcome,
         validation=validation,
         pricing=pricing,
+        breach_reasons=breach_reasons or [],
     )
 
     # Compute hashes

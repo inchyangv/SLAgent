@@ -92,3 +92,34 @@ def test_no_bonus_rules_fallback():
     d = compute_payout(mandate=mandate, latency_ms=1000, success=True, validation_pass=True)
     assert d.payout == 60_000
     assert d.rule_applied == "base_pay_only"
+
+
+# --- Breach reasons (T-142) ---
+
+def test_breach_upstream_error():
+    """success=False → BREACH_UPSTREAM_ERROR"""
+    d = compute_payout(mandate=SAMPLE_MANDATE, latency_ms=1000, success=False, validation_pass=True)
+    assert "BREACH_UPSTREAM_ERROR" in d.breach_reasons
+
+def test_breach_schema_fail():
+    """validation_pass=False → BREACH_SCHEMA_FAIL"""
+    d = compute_payout(mandate=SAMPLE_MANDATE, latency_ms=1000, success=True, validation_pass=False)
+    assert "BREACH_SCHEMA_FAIL" in d.breach_reasons
+
+def test_breach_latency_tier_down():
+    """Slower tier → BREACH_LATENCY_TIER_DOWN"""
+    d = compute_payout(mandate=SAMPLE_MANDATE, latency_ms=3500, success=True, validation_pass=True)
+    assert "BREACH_LATENCY_TIER_DOWN" in d.breach_reasons
+    assert d.payout == 80_000
+
+def test_no_breach_fast_full_payout():
+    """Best tier → no breaches"""
+    d = compute_payout(mandate=SAMPLE_MANDATE, latency_ms=1500, success=True, validation_pass=True)
+    assert d.breach_reasons == []
+    assert d.payout == 100_000
+
+def test_breach_slow_tier():
+    """Slowest tier → BREACH_LATENCY_TIER_DOWN"""
+    d = compute_payout(mandate=SAMPLE_MANDATE, latency_ms=7000, success=True, validation_pass=True)
+    assert "BREACH_LATENCY_TIER_DOWN" in d.breach_reasons
+    assert d.payout == 60_000
