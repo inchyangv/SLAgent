@@ -58,6 +58,7 @@ def _patch_env(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-for-tests")
     monkeypatch.setenv("SELLER_FALLBACK", "false")
     monkeypatch.setenv("SELLER_ADDRESS", "0xSELLER_TEST_ADDR")
+    monkeypatch.delenv("SELLER_PRIVATE_KEY", raising=False)
     _accepted_mandates.clear()
 
 

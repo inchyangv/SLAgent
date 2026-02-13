@@ -3,6 +3,8 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from gateway.app.models import Metrics, PricingResult, Receipt
 from gateway.app.receipt import ReceiptStore
 
@@ -33,6 +35,12 @@ def _make_receipt(
 
 
 # ── In-memory search ────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _isolate_receipt_store_env(monkeypatch):
+    """Keep memory-search tests deterministic regardless of local .env."""
+    monkeypatch.delenv("RECEIPT_DB_PATH", raising=False)
 
 
 def test_search_by_buyer_memory():
