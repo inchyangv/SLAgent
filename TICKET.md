@@ -773,7 +773,7 @@ Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment aut
 ---
 
 ## T-123 — Fix On-chain Funds Flow (Buyer Pays, Not Gateway)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-010, T-050, T-122
 
@@ -793,10 +793,17 @@ Update the on-chain flow so **the buyer is the payer** (or the contract has escr
 - On-chain accounting shows buyer funds `max_price` (not gateway custody)
 - Settlement distributes payout/refund from escrowed buyer funds
 
+### Completion Notes
+- SLASettlement.sol: deposit() + DEPOSITED→PENDING flow, buyer funds escrow
+- facilitator/settlement.py: submit_deposit() for on-chain deposit
+- gateway/app/settlement_client.py: ABI includes deposit()
+- Foundry tests cover deposit→settle→finalize and deposit→settle→dispute paths
+- Validate: `cd contracts && forge test -v`
+
 ---
 
 ## T-124 — Separate Seller Identity (URL vs Address)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-050
 
@@ -815,10 +822,16 @@ Introduce a proper `SELLER_ADDRESS` and include it in receipts and settlement ca
 - Live chain mode no longer normalizes seller/buyer to zero-address
 - On-chain payout goes to the configured seller address
 
+### Completion Notes
+- gateway/app/config.py: SELLER_ADDRESS env var
+- gateway/app/settlement_client.py: _normalize_addr() with checksum validation
+- Receipt/settlement always use EVM addresses, not URLs
+- Validate: `pytest gateway/tests/ -v`
+
 ---
 
 ## T-125 — Real On-chain Disputes (Gateway + CLI)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **Depends on:** T-011, T-080
 
@@ -845,6 +858,13 @@ Implement actual calls:
 - Dispute open/resolve/finalize changes contract state on SKALE
 - Dashboard shows dispute state for at least one receipt
 
+### Completion Notes
+- gateway/app/settlement_client.py: submit_dispute_open, submit_dispute_resolve, submit_finalize
+- ABI includes openDispute, resolveDispute, finalize
+- Chain mode: real tx submission; mock mode: log-only
+- scripts/resolve_dispute.py: CLI for dispute operations
+- Validate: `pytest gateway/tests/ facilitator/tests/ -v`
+
 ---
 
 ## T-126 — Receipt Persistence (SQLite) + Export
@@ -867,7 +887,7 @@ Receipt store supports optional SQLite persistence (via `RECEIPT_DB_PATH`) and J
 ---
 
 ## T-127 — Partner Integration: Google A2A/AP2 Message Layer
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **Depends on:** T-020
 
@@ -893,7 +913,7 @@ so the demo isn't only "custom REST JSON".
 ---
 
 ## T-128 — Partner Integration: ERC-8004 Hook (Orchestration)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P2  
 **Depends on:** T-020, T-010
 
