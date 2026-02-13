@@ -5,14 +5,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
 import httpx
+from eth_account import Account
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from web3 import Web3
 
 from gateway.app.config import settings
 from gateway.app.events import event_store
@@ -64,10 +67,145 @@ DEFAULT_MANDATE = {
     "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
 }
 
+# Minimal ERC20 view ABI for balance dashboard.
+ERC20_VIEW_ABI = [
+    {
+        "constant": True,
+        "inputs": [{"name": "account", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "payable": False,
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "payable": False,
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "payable": False,
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+
+def _to_checksum_or_empty(addr: str) -> str:
+    """Return checksum address if valid EVM address, otherwise empty string."""
+    if addr and Web3.is_address(addr):
+        return Web3.to_checksum_address(addr)
+    return ""
+
+
+def _gateway_address_from_private_key() -> str:
+    """Derive gateway address from env private key if available."""
+    if not settings.gateway_private_key:
+        return ""
+    try:
+        return Account.from_key(settings.gateway_private_key).address
+    except Exception:
+        return ""
+
+
+def _resolve_balance_addresses() -> dict[str, str]:
+    """Resolve buyer/seller/gateway addresses for the dashboard balance panel."""
+    latest_mandate = mandate_store.list_all(limit=1)
+    latest = latest_mandate[0] if latest_mandate else {}
+
+    buyer = _to_checksum_or_empty(settings.buyer_address) or _to_checksum_or_empty(latest.get("buyer", ""))
+    seller = _to_checksum_or_empty(settings.seller_address) or _to_checksum_or_empty(latest.get("seller", ""))
+    gateway = _to_checksum_or_empty(_gateway_address_from_private_key())
+
+    # Fallback to the latest receipt when env/mandate addresses are missing.
+    if not buyer or not seller:
+        recent = receipt_store.list_recent(limit=1)
+        if recent:
+            last = recent[0]
+            if not buyer:
+                buyer = _to_checksum_or_empty(last.buyer)
+            if not seller:
+                seller = _to_checksum_or_empty(last.seller)
+
+    return {"buyer": buyer, "seller": seller, "gateway": gateway}
+
 
 @app.get("/v1/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/v1/balances")
+def get_balances() -> JSONResponse:
+    """Read on-chain USDC balances for buyer/seller/gateway (dashboard use)."""
+    roles = _resolve_balance_addresses()
+    token_addr = _to_checksum_or_empty(settings.payment_token)
+
+    payload: dict[str, Any] = {
+        "available": False,
+        "network": {
+            "chain_id": settings.chain_id,
+            "rpc_url": settings.chain_rpc_url,
+        },
+        "token": {
+            "address": token_addr or settings.payment_token,
+            "symbol": "USDC",
+            "decimals": 6,
+        },
+        "roles": {
+            role: {"address": addr, "balance_raw": None, "balance": None}
+            for role, addr in roles.items()
+        },
+        "updated_at": int(time.time()),
+    }
+
+    if not token_addr:
+        payload["error"] = "PAYMENT_TOKEN_ADDRESS is missing or invalid."
+        return JSONResponse(content=payload)
+
+    try:
+        w3 = Web3(Web3.HTTPProvider(settings.chain_rpc_url, request_kwargs={"timeout": 6}))
+        if not w3.is_connected():
+            raise RuntimeError("Failed to connect RPC")
+
+        token = w3.eth.contract(address=token_addr, abi=ERC20_VIEW_ABI)
+
+        decimals = 6
+        symbol = "USDC"
+        try:
+            decimals = int(token.functions.decimals().call())
+        except Exception:
+            pass
+        try:
+            symbol = str(token.functions.symbol().call())
+        except Exception:
+            pass
+
+        payload["token"]["decimals"] = decimals
+        payload["token"]["symbol"] = symbol
+
+        for role, addr in roles.items():
+            if not addr:
+                continue
+            raw = int(token.functions.balanceOf(addr).call())
+            payload["roles"][role]["balance_raw"] = str(raw)
+            payload["roles"][role]["balance"] = f"{raw / (10 ** decimals):.{min(decimals, 6)}f}"
+
+        payload["available"] = True
+        payload["updated_at"] = int(time.time())
+        return JSONResponse(content=payload)
+    except Exception as e:
+        logger.warning("Balance fetch failed: %s", e)
+        payload["error"] = str(e)
+        return JSONResponse(content=payload)
 
 
 # --- Mandate endpoints ---

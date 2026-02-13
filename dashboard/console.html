@@ -12,7 +12,9 @@
         .app-header { margin-bottom: 6px; }
         .brand-logo { width: min(360px, 100%); height: auto; display: block; }
         h2 { font-size: 1rem; color: #999; margin-bottom: 10px; border-bottom: 1px solid #222; padding-bottom: 6px; }
-        .subtitle { color: #888; margin-bottom: 16px; font-size: 0.85rem; }
+        .top-shell { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+        .brand-wrap { min-width: 260px; flex: 1; }
+        .subtitle { color: #888; margin-bottom: 0; font-size: 0.85rem; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
         .card { background: #111; border: 1px solid #222; border-radius: 6px; padding: 14px; }
         .card-full { grid-column: 1 / -1; }
@@ -59,14 +61,42 @@
         .attest-dots { display: flex; gap: 4px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #333; }
         .dot.signed { background: #4caf50; }
+        .balance-panel { min-width: 360px; max-width: 460px; padding: 10px 12px; }
+        .balance-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .balance-title { font-size: 0.82rem; color: #9bb8d6; letter-spacing: 0.04em; }
+        .balance-updated { font-size: 0.7rem; color: #6f8193; }
+        .balance-list { display: grid; gap: 6px; }
+        .balance-row { display: grid; grid-template-columns: 68px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid #1d2732; border-radius: 6px; background: #0d131a; }
+        .balance-role { font-size: 0.72rem; color: #8aa8c7; text-transform: uppercase; letter-spacing: 0.05em; }
+        .balance-addr { font-size: 0.72rem; color: #6a8199; }
+        .balance-amount { font-size: 0.86rem; color: #d8ebff; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .balance-error { color: #d87a7a; font-size: 0.74rem; padding: 4px 2px 0; }
+        @media (max-width: 980px) {
+            .top-shell { flex-direction: column; }
+            .balance-panel { width: 100%; max-width: none; min-width: 0; }
+        }
     </style>
 </head>
 <body>
 
-<header class="app-header">
-    <img class="brand-logo" src="./assets/slagent-402-logo.svg" alt="SLAgent-402 logo">
-</header>
-<p class="subtitle">Pay by proof, not upfront — Negotiation + Monitoring</p>
+<div class="top-shell">
+    <div class="brand-wrap">
+        <header class="app-header">
+            <img class="brand-logo" src="./assets/slagent-402-logo.svg" alt="SLAgent-402 logo">
+        </header>
+        <p class="subtitle">Pay by proof, not upfront — Negotiation + Monitoring</p>
+    </div>
+    <section class="card balance-panel">
+        <div class="balance-head">
+            <div class="balance-title">LIVE USDC BALANCES</div>
+            <div id="balance-updated" class="balance-updated">--:--:--</div>
+        </div>
+        <div id="balance-list" class="balance-list">
+            <div class="empty" style="padding:10px 6px">Loading balances...</div>
+        </div>
+        <div id="balance-error" class="balance-error"></div>
+    </section>
+</div>
 
 <!-- Config Bar -->
 <div class="row" style="margin-bottom:14px">
@@ -222,6 +252,8 @@
 <script>
     let allReceipts = [];
     let currentFilter = 'all';
+    let balancePollTimer = null;
+    let balanceErrorLogged = false;
     const gw = () => document.getElementById('gateway-url').value.replace(/\/$/,'');
     const sl = () => document.getElementById('seller-url').value.replace(/\/$/,'');
 
@@ -230,6 +262,67 @@
         const ts = new Date().toLocaleTimeString();
         log.innerHTML += `<div class="log-entry ${cls}">[${ts}] ${msg}</div>`;
         log.scrollTop = log.scrollHeight;
+    }
+
+    function shortAddr(addr) {
+        if (!addr) return '-';
+        return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    }
+
+    function formatBalance(value, symbol) {
+        if (value == null) return '-';
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '-';
+        return `${n.toFixed(4)} ${symbol || 'USDC'}`;
+    }
+
+    async function fetchBalances({silent = true} = {}) {
+        const list = document.getElementById('balance-list');
+        const errEl = document.getElementById('balance-error');
+        const updatedEl = document.getElementById('balance-updated');
+        try {
+            const resp = await fetch(`${gw()}/v1/balances`);
+            const data = await resp.json();
+            const symbol = data.token?.symbol || 'USDC';
+            const roles = data.roles || {};
+            const orderedRoles = ['buyer', 'seller', 'gateway'];
+
+            list.innerHTML = orderedRoles.map((role) => {
+                const entry = roles[role] || {};
+                const addr = entry.address || '';
+                const bal = formatBalance(entry.balance, symbol);
+                return `
+                    <div class="balance-row">
+                        <div class="balance-role">${role}</div>
+                        <div class="balance-addr" title="${addr || '-'}">${shortAddr(addr)}</div>
+                        <div class="balance-amount">${bal}</div>
+                    </div>
+                `;
+            }).join('');
+
+            if (data.updated_at) {
+                updatedEl.textContent = new Date(data.updated_at * 1000).toLocaleTimeString();
+            } else {
+                updatedEl.textContent = new Date().toLocaleTimeString();
+            }
+
+            if (!data.available && data.error) {
+                errEl.textContent = `Balance sync issue: ${data.error}`;
+                if (!silent && !balanceErrorLogged) {
+                    addLog(`Balances warning: ${data.error}`, 'err');
+                    balanceErrorLogged = true;
+                }
+            } else {
+                errEl.textContent = '';
+                balanceErrorLogged = false;
+            }
+        } catch (e) {
+            errEl.textContent = `Balance fetch failed: ${e.message}`;
+            if (!silent && !balanceErrorLogged) {
+                addLog(`Balances error: ${e.message}`, 'err');
+                balanceErrorLogged = true;
+            }
+        }
     }
 
     // ── Simulator Presets (T-144) ──
@@ -573,6 +666,7 @@
             fetchCapabilities(),
             fetchMandates(),
             fetchReceipts(),
+            fetchBalances({silent: false}),
         ]);
     }
 
@@ -604,6 +698,7 @@
             // Refresh receipts to show new data
             await fetchReceipts();
             await fetchMandates();
+            await fetchBalances({silent: false});
         } catch (e) {
             addLog(`Demo error: ${e.message}`, 'err');
         } finally {
@@ -681,8 +776,16 @@
         }).join('');
     }
 
-    // Auto-fetch on load
+    // Auto-fetch on load + live USDC balance polling (2s)
     refreshAll();
+    balancePollTimer = window.setInterval(() => {
+        fetchBalances({silent: true});
+    }, 2000);
+    window.addEventListener('beforeunload', () => {
+        if (balancePollTimer) {
+            window.clearInterval(balancePollTimer);
+        }
+    });
 </script>
 
 </body>
