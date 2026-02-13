@@ -1,10 +1,10 @@
 <!-- PROJECT.md -->
 
-# SLA-Pay v2
+# SLAgent-402
 **Tagline:** Don’t pay upfront. Pay by proof.
 
 ## 0) What This Project Is
-SLA-Pay v2 is a **pay-by-performance settlement layer** for agent-to-agent API calls. It sits between a **Buyer Agent** and a **Seller Agent** (or any AI-powered API), measures **QoS + deterministic validity**, generates a signed **Performance Receipt**, and then settles payment on-chain with **automatic split + refund**.
+SLAgent-402 is a **pay-by-performance settlement layer** for agent-to-agent API calls. It sits between a **Buyer Agent** and a **Seller Agent** (or any AI-powered API), measures **QoS + deterministic validity**, generates a signed **Performance Receipt**, and then settles payment on-chain with **automatic split + refund**.
 
 Core design principle:
 - Use **x402 HTTP payments** for standardized “pay to access” gating.
@@ -39,7 +39,7 @@ Per-call settlement at scale requires:
 ---
 
 ## 2) The Solution (One Sentence)
-SLA-Pay v2 converts “pay-to-call” agent services into **SLA-driven contracts** that settle using **proof (receipts)** rather than trust.
+SLAgent-402 converts “pay-to-call” agent services into **SLA-driven contracts** that settle using **proof (receipts)** rather than trust.
 
 ---
 
@@ -114,7 +114,7 @@ Instead:
 ---
 
 ## 6) Pricing Model (Bonus, Not Penalty)
-SLA-Pay v2 uses:
+SLAgent-402 uses:
 - `max_price`: locked upfront
 - `base_pay`: minimum payout for successful + valid output
 - `bonus_pay`: additional payout based on performance targets
@@ -143,7 +143,7 @@ This aligns incentives:
     - handles x402 402 challenge
     - signs payment
 
-2) **SLA-Pay Gateway (FastAPI)**
+2) **SLAgent-402 Gateway (FastAPI)**
     - reverse proxy to Seller
     - measures TTFT/latency
     - runs validators
@@ -158,7 +158,7 @@ This aligns incentives:
     - processes/verifies x402 payments
     - coordinates settlement transactions
 
-5) **Settlement Contract (SKALE)**
+5) **Settlement Contract (SKALE Base Sepolia (BITE v2 Sandbox 2))**
     - receives `max_price`
     - pays Seller and refunds Buyer according to computed payout
     - stores receipt hash via event logs
@@ -320,7 +320,7 @@ Important:
 - Optionally batch or optimize transaction submission.
 
 Note:
-- We deliberately allow self-hosted facilitator so we can settle on SKALE without relying on a specific hosted facilitator network support policy.
+- We deliberately allow self-hosted facilitator so we can settle on SKALE Base Sepolia (BITE v2 Sandbox 2) without relying on a specific hosted facilitator network support policy.
 
 ---
 

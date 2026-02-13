@@ -1,8 +1,8 @@
-# Architecture — SLA-Pay v2
+# Architecture — SLAgent-402
 
 ## Agent Roles & Trust Boundaries
 
-SLA-Pay v2 has three distinct agent roles. Each role has clear responsibilities and signing authority.
+SLAgent-402 has three distinct agent roles. Each role has clear responsibilities and signing authority.
 
 ### Buyer Agent (`buyer_agent/`)
 
@@ -111,7 +111,7 @@ SLA-Pay v2 has three distinct agent roles. Each role has clear responsibilities 
 ┌─────────────────────────────────────────────────────────────────┐
 │                    ON-CHAIN (trustless)                          │
 │                                                                 │
-│  Settlement Contract (SKALE)                                    │
+│  Settlement Contract (SKALE Base Sepolia (BITE v2 Sandbox 2))                             │
 │  - escrow, split, refund, receipt hash, dispute                 │
 │  (contracts/src/SLASettlement.sol)                               │
 └─────────────────────────────────────────────────────────────────┘
@@ -160,20 +160,20 @@ Buyer Agent          Gateway              Seller Agent         Settlement Contra
 
 ## Chain & Token Strategy (MVP)
 
-### Network: SKALE Hackathon (BITE v2 Sandbox 2)
+### Network: SKALE Base Sepolia (BITE v2 Sandbox 2)
 
 - **Chain ID:** `103698795`
 - **RPC:** `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
 - **Explorer:** `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
-- **Note:** 배포 시 EVM 버전은 Istanbul 이하가 필요합니다(Foundry는 `contracts/foundry.toml`에서 고정).
+- **Note:** 이 체인 배포를 위해 `evm_version = "istanbul"`을 사용합니다.
 
-### Token: Predeployed USDC (Hackathon)
+### Token: USDC (SKALE Base Sepolia (BITE v2 Sandbox 2))
 
-Hackathon chain에는 USDC가 미리 배포되어 있으며, 데모는 이를 사용한다.
+SKALE Base Sepolia (BITE v2 Sandbox 2)에서 USDC를 결제/정산 토큰으로 사용한다.
 
 - **Name/Symbol:** USDC / USDC
 - **Decimals:** 6
-- **Address (BITE v2 Sandbox 2):** `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- **Address:** `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
 - **Rationale:** “실제 토큰”을 써서 x402/정산 데모의 현실성을 올린다.
 
 ### Amount Unit Conventions
@@ -221,7 +221,7 @@ All amounts in the protocol are denominated in the **smallest token unit** (6 de
                                │
                     ┌──────────▼──────────┐
                     │  Settlement Contract │
-                    │ (SKALE BITE v2)      │
+                    │ (SKALE Base Sepolia (BITE v2 Sandbox 2))       │
                     │                     │
                     │  - split funds      │
                     │  - emit receipt hash│

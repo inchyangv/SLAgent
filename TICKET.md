@@ -1,4 +1,4 @@
-# SLA-Pay v2 — Execution Tickets
+# SLAgent-402 — Execution Tickets
 **Rule:** Execute tickets top-to-bottom. Do not skip unless explicitly blocked by dependencies.
 
 ## Ticket Status Legend
@@ -70,7 +70,7 @@ Initialize repository structure and engineering standards so all subsequent tick
 Define how value moves in the demo: which network, which token, and how decimals are handled.
 
 ### Tasks
-- Pick SKALE chain RPC used for demo (testnet or mainnet-like environment)
+- Pick SKALE Base Sepolia (BITE v2 Sandbox 2) RPC used for demo
 - Decide token type:
     - simplest: deploy an ERC20 mock token with fixed decimals
 - Document decimals and amount units in docs
@@ -83,7 +83,7 @@ Define how value moves in the demo: which network, which token, and how decimals
 - docs update + optional token contract scaffold
 
 ### Completion Notes
-- SKALE Europa Hub (chain 2046399126, zero gas fees)
+- SKALE Base Sepolia (BITE v2 Sandbox 2) (chain 103698795)
 - ERC20 mock token (SLAT, 6 decimals) — matches USDC convention
 - Amount conventions documented in docs/ARCHITECTURE.md
 - Integer arithmetic rules: round down, payout <= max_price invariant
@@ -588,7 +588,7 @@ Finalize what judges will see: clean docs, clean demo path, artifact links.
     - how to run demo
 - Provide:
     - contract addresses (or deployment instructions)
-    - short pitch bullets for SKALE / Coinbase x402 / Google AP2
+    - short pitch bullets for SKALE Base Sepolia (BITE v2 Sandbox 2) / Coinbase x402 / Google AP2
 - Add `docs/SUBMISSION.md` with:
     - repo overview
     - demo steps
@@ -861,7 +861,7 @@ Implement actual calls:
 - Add tests using a local anvil/fork or contract mock
 
 ### Acceptance Criteria
-- Dispute open/resolve/finalize changes contract state on SKALE
+- Dispute open/resolve/finalize changes contract state on SKALE Base Sepolia (BITE v2 Sandbox 2)
 - Dashboard shows dispute state for at least one receipt
 
 ### Completion Notes
@@ -949,7 +949,7 @@ SLA를 "문서"가 아니라 "협상된 객체"로 만들고 gateway가 강제(e
 - mandate 저장소 추가(인메모리 + 선택적으로 SQLite)
 - mandate 생성/수락 경로 추가:
   - REST (예: `POST /v1/mandates`) 또는
-  - A2A (`/a2a/message`의 `sla-pay.mandate.request`)
+  - A2A (`/a2a/message`의 `slagent-402.mandate.request`)
 - `/v1/call`에서 `mandate_id`를 요구하고, unknown/expired mandate는 거절
 - receipt/settlement에 아래 필드 채우기:
   - `mandate_id`, `buyer`, `seller`, `gateway`
@@ -1117,7 +1117,7 @@ buyer-pays 모델(T-123)을 구현하려면 ABI/컨트랙트가 정확히 일치
 
 ### Tasks
 - `scripts/demo_one_command.sh` 또는 `python scripts/demo_one_command.py` 추가:
-  - SKALE testnet 배포(Foundry) 실행 및 주소 파싱
+  - SKALE Base Sepolia (BITE v2 Sandbox 2) 배포(Foundry) 실행 및 주소 파싱
   - Gateway/Seller/Buyer Agent 순서대로 실행(포트 충돌/헬스체크 포함)
   - 3개 시나리오 실행 + receipt/tx_hash 출력
   - receipt 3자 서명(attestation)까지 자동 제출

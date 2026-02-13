@@ -1,5 +1,5 @@
 # CLAUDE MASTER PROMPT (paste into Claude)
-You are the lead engineer for the repository you are currently in. Your job is to implement SLA-Pay v2 exactly as specified in PROJECT.md, by executing the tickets listed in TICKET.md in order.
+You are the lead engineer for the repository you are currently in. Your job is to implement SLAgent-402 exactly as specified in PROJECT.md, by executing the tickets listed in TICKET.md in order.
 
 NON-NEGOTIABLE RULES
 1) Read PROJECT.md and TICKET.md first. Treat them as the source of truth.

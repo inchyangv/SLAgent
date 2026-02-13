@@ -1,10 +1,10 @@
-# Submission — SLA-Pay v2
+# Submission — SLAgent-402
 
-## What is SLA-Pay v2?
+## What is SLAgent-402?
 
 **Pay by proof, not upfront.**
 
-SLA-Pay v2 is a pay-by-performance settlement layer for agent-to-agent API calls.
+SLAgent-402 is a pay-by-performance settlement layer for agent-to-agent API calls.
 Instead of fixed pricing, buyers pay `max_price` upfront and receive automatic refunds
 based on measured QoS (latency, validity) — settled on-chain with cryptographic receipts.
 
@@ -24,8 +24,8 @@ based on measured QoS (latency, validity) — settled on-chain with cryptographi
 | Gateway | Python, FastAPI |
 | Pricing Engine | Integer arithmetic, latency tiers |
 | Validation | JSON Schema (deterministic) |
-| Chain | SKALE Hackathon: BITE v2 Sandbox 2 (Chain ID 103698795) |
-| Token | Predeployed USDC (6 decimals) |
+| Chain | SKALE Base Sepolia (BITE v2 Sandbox 2) (Chain ID 103698795) |
+| Token | USDC (6 decimals) |
 | Dashboard | Static HTML + vanilla JS |
 
 ## Repository Overview
@@ -94,10 +94,10 @@ Three scenarios demonstrating pay-by-performance:
 
 ## Hackathon Track Relevance
 
-### SKALE
-- Zero gas fees enable per-request micro-settlements
-- Settlement contract designed for high-frequency on-chain operations
-- Escrow + delayed finalization for dispute safety
+### SKALE Base Sepolia (BITE v2 Sandbox 2)
+- SKALE 테스트넷 환경에서 온체인 정산 흐름 재현
+- 가스 부담이 낮아 요청 단위 정산 데모에 유리
+- Escrow + delayed finalization으로 dispute 안전성 확보
 
 ### Coinbase x402
 - x402-compatible payment gating (402 → paid request flow)

@@ -1,20 +1,36 @@
-# 로컬 실행 가이드 — SLA-Pay v2
+# 로컬 실행 가이드 — SLAgent-402
 
-목표: 로컬에서 Gateway/Seller를 띄우고, 데모 스크립트로 `402 → paid request → receipt/정산` 흐름을 재현합니다.
+목표: 로컬에서 Gateway/Seller를 띄우고, `402 → paid request → receipt` 흐름을 빠르게 재현합니다.
 
-중요: 해커톤 데모 기준으로 Seller는 **Google Gemini**를 사용하는 실제 LLM이어야 합니다.
-이 레포의 `gateway/demo_seller`는 더미이므로, 데모에서는 별도 Gemini Seller를 띄우고 `SELLER_UPSTREAM_URL`로 연결하세요.
+중요:
+- 해커톤 데모 기준으로 Seller는 **Google Gemini**를 사용하는 실제 LLM이어야 합니다.
+- 다만 개발/리허설 중에는 `SELLER_FALLBACK=true`로 LLM 없이도 동작합니다.
 
-추가로, "에이전트 해커톤" 관점에서 Buyer도 LLM(Gemini)을 사용해 협상/의사결정을 하는 Buyer Agent가 필요합니다.
-현재 레포는 buyer를 `scripts/run_demo.py`로 시뮬레이션하고 있으니, Buyer Agent는 `TICKET.md`의 `T-121`로 구현 범위를 잡아둡니다.
+---
+
+## 환경변수(.env) 한 군데서 관리
+
+이 레포는 **레포 루트 `/.env` 파일 1개**로 Gateway/Seller/스크립트 설정을 관리합니다(자동 로딩).
+
+```bash
+cp .env.example .env
+```
+
+로컬에서 “일단 돌아가게” 하려면:
+- `PAYMENT_MODE=hmac` 유지
+- `SETTLEMENT_CONTRACT_ADDRESS`, `GATEWAY_PRIVATE_KEY`는 비워도 됨 (온체인 tx는 mock 처리)
+
+---
 
 ## 준비물
 
 - Python 3.11+
-- Foundry (`forge`, `cast`) (Solidity)
+- Foundry (`forge`, `cast`)
 
 선택:
-- `jq` (curl 출력 보기 편하게)
+- `jq`
+
+---
 
 ## Python 세팅
 
@@ -24,13 +40,9 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-테스트:
+---
 
-```bash
-.venv/bin/python -m pytest gateway/tests/ facilitator/tests/ -v
-```
-
-## 컨트랙트 빌드/테스트
+## 컨트랙트 빌드/테스트(선택)
 
 ```bash
 cd contracts
@@ -38,156 +50,119 @@ forge build
 forge test -v
 ```
 
-## 로컬 실행 (Mock Chain)
+---
 
-Seller + Gateway를 각각 띄웁니다.
+## 로컬 실행 (체인 없이)
 
+Terminal 1: Seller
 ```bash
-# Terminal 1: Gemini Seller (or fallback without API key)
 source .venv/bin/activate
-export GEMINI_API_KEY="..."          # 없으면 자동으로 결정적 fallback 사용
-# export SELLER_FALLBACK="true"     # 명시적 fallback 모드
+# Gemini 키가 없으면 fallback로:
+# export SELLER_FALLBACK=true
 uvicorn seller.main:app --port 8001
+```
 
-# Terminal 2: Gateway
+Terminal 2: Gateway
+```bash
 source .venv/bin/activate
 uvicorn gateway.app.main:app --port 8000
 ```
 
-3가지 시나리오 실행:
+웹 콘솔:
+- `http://localhost:8000/dashboard/console.html`
 
+CLI 시나리오 러너:
 ```bash
 source .venv/bin/activate
 python scripts/run_demo.py
 ```
 
-대시보드: `http://localhost:8000/dashboard/console.html`
+---
 
 ## SKALE 테스트넷으로 실행 (Live Chain)
 
-### 1) SKALE BITE v2 Sandbox 2에 배포
-
-네트워크(해커톤 문서 기준):
+체인: SKALE Hackathon — BITE v2 Sandbox 2
 - Chain ID: `103698795`
 - RPC: `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
 - Explorer: `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
-- (참고) USDC: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- USDC: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
 
 중요(배포 실패 방지):
 - 이 체인은 EVM 버전이 **Istanbul 이하**여야 배포가 됩니다.
-- 이 레포는 `contracts/foundry.toml`에 `evm_version = "istanbul"`로 고정되어 있습니다.
+- 이 레포는 `contracts/foundry.toml`에서 `evm_version = "istanbul"`로 맞춰둔 상태입니다.
 
-지갑 네트워크 추가(수동):
-- Network Name: `SKALE BITE v2 Sandbox 2`
-- RPC URL: `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
-- Chain ID: `103698795`
-- Currency Symbol: `sFUEL`
-- Block Explorer URL: `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
+### 1) Faucet/자금 준비
 
-Faucet/자금 준비:
-- 가스는 `sFUEL`입니다. `sFUEL`(gas) 또는 `USDC`가 필요하면 SKALE Builders Telegram에서 요청해야 합니다:
-  - SKALE Builders Telegram: `https://t.me/+dDdvu5T6BOEzZDEx`
-  - 채널에서 @TheGreatAxios 를 태그해서 `sFUEL`/`USDC` 지원을 요청
-- 데모는 **기존 USDC(6 decimals)** 를 사용합니다.
+필요:
+- `sFUEL` (가스)
+- `USDC` (현재 구현은 gateway EOA가 deposit payer)
 
-데모는 가장 단순하게 EOA 하나를 `deployer = gateway = resolver`로 쓰는 걸 추천합니다.
+SKALE Builders Telegram: `https://t.me/+dDdvu5T6BOEzZDEx` 에서
+@TheGreatAxios 를 태그해 `sFUEL`/`USDC` 지원 요청.
+
+### 2) 컨트랙트 배포
+
+`forge`는 쉘 env를 보므로 `.env`를 export로 로드해서 실행합니다:
 
 ```bash
+set -a
+source .env
+set +a
+
 cd contracts
-
-export RPC_URL="https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox"
-export PRIVATE_KEY="0x..."
-export TOKEN_ADDRESS="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"  # USDC (predeployed)
-
 forge script script/DeploySlaPayV2.s.sol:DeploySlaPayV2 \
   --rpc-url "$RPC_URL" \
   --broadcast \
   -vvvv
 ```
 
-출력에서 아래 주소를 복사합니다:
-- `Token` (USDC)
-- `SLASettlement`
+배포 후 `.env`에 `SETTLEMENT_CONTRACT_ADDRESS`를 채웁니다.
 
-노트:
-- 기존 USDC를 사용하므로 `mint()` 같은 건 없습니다. USDC는 Faucet(텔레그램 요청)로 받아야 합니다.
-- 배포 스크립트는 `deployer == gateway`일 때 settlement 컨트랙트로 approve를 자동으로 잡아줄 수 있습니다(USDC도 ERC20 approve는 동일).
+### 3) 서비스 실행 + 데모
 
-### 2) Gateway 환경변수 설정
-
-이 코드베이스는 `.env` 자동 로딩이 아니라, 실행 쉘에서 `export ...`로 환경변수를 주입하는 방식입니다.
-
+Seller:
 ```bash
 source .venv/bin/activate
+uvicorn seller.main:app --port 8001
+```
 
-export PAYMENT_MODE="hmac"  # 데모 안정성 우선. x402 모드는 아래 참고
-export CHAIN_ID="103698795"
-export CHAIN_RPC_URL="https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox"
-export SETTLEMENT_CONTRACT_ADDRESS="0x..."
-export PAYMENT_TOKEN_ADDRESS="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"  # USDC
-export GATEWAY_PRIVATE_KEY="0x..."
-
-export SELLER_UPSTREAM_URL="http://localhost:8001"  # Gemini seller URL
-export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
-
+Gateway:
+```bash
+source .venv/bin/activate
 uvicorn gateway.app.main:app --port 8000
 ```
 
-### 3) Seller + 데모 스크립트 실행
+웹 콘솔:
+- `http://localhost:8000/dashboard/console.html`
 
-```bash
-# Terminal 1: Gemini Seller
-source .venv/bin/activate
-export GEMINI_API_KEY="..."
-export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
-uvicorn seller.main:app --port 8001
-
-# Terminal 3: Demo runner
-source .venv/bin/activate
-export BUYER_ADDRESS="0x1111111111111111111111111111111111111111"
-export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
-python scripts/run_demo.py
-```
-
-정상 설정이면 paid request마다 실제 `tx_hash`가 내려옵니다.
-
-노트(중요):
-- 현재 컨트랙트는 `deposit()` 선행이 필요한 escrow 구조입니다.
-- gateway가 `deposit → settle`을 자동으로 연결하지 못한 상태면 라이브 체인에서 settle tx가 revert될 수 있습니다(티켓: `TICKET.md`의 `T-123`).
+노트(중요, 현재 구현):
+- 요청마다 `deposit_tx_hash`와 `settle_tx_hash`가 생성됩니다.
+- **deposit payer는 gateway EOA**이므로, `GATEWAY_PRIVATE_KEY` 주소에 USDC가 있어야 합니다.
+- deployer==gateway이면 배포 스크립트가 approve를 자동으로 잡아줄 수 있습니다.
 
 ### Allowance(approve) 트러블슈팅
 
-allowance 관련 에러가 나면 **gateway EOA**에서 settlement 컨트랙트로 approve를 줘야 합니다.
+approve가 안 되어 deposit이 실패하면(또는 token allowance 에러가 나면) gateway EOA에서 settlement에 approve를 줍니다.
 
 ```bash
-export RPC_URL="https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox"
-export PRIVATE_KEY="0x..."
-export TOKEN="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"       # USDC
-export SETTLEMENT="0x..."  # SLASettlement
+set -a
+source .env
+set +a
 
 cast send --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" \
-  "$TOKEN" "approve(address,uint256)" "$SETTLEMENT" "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  "$TOKEN_ADDRESS" "approve(address,uint256)" "$SETTLEMENT_CONTRACT_ADDRESS" \
+  "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 ```
 
-## 대시보드
-
-Gateway가 실행 중이면 same-origin으로 접속 가능합니다 (CORS 설정 불필요):
-- Demo Console: `http://localhost:8000/dashboard/console.html`
-- Receipt Ledger: `http://localhost:8000/dashboard/index.html`
+---
 
 ## PAYMENT_MODE 옵션
 
-Gateway x402 게이팅은 2가지 모드를 지원합니다:
+- `PAYMENT_MODE=hmac` (기본): 키 없이 데모 가능
+- `PAYMENT_MODE=x402`: `X-PAYMENT`에 EIP-712 서명을 넣고 gateway가 검증
 
-1. `PAYMENT_MODE=hmac` (기본): 키 없이 동작하는 로컬 데모 모드
-2. `PAYMENT_MODE=x402`: EIP-712 서명을 포함한 `X-PAYMENT` 헤더를 검증하는 모드
+x402 모드에서 필요한 값은 `.env`에 채우면 됩니다:
+- `BUYER_PRIVATE_KEY=...`
+- `SLA_TOKEN_NAME=USDC`
+- `SLA_TOKEN_VERSION=` (빈 문자열)
 
-`PAYMENT_MODE=x402`로 데모 스크립트를 돌리려면:
-```bash
-export PAYMENT_MODE="x402"
-export BUYER_ADDRESS="0x..."
-export BUYER_PRIVATE_KEY="0x..."
-export PAYMENT_TOKEN_ADDRESS="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"
-export SLA_TOKEN_NAME="USDC"
-export SLA_TOKEN_VERSION=""
-```

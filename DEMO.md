@@ -1,170 +1,192 @@
-# 데모 가이드 — SLA-Pay v2
+# 데모 가이드 — SLAgent-402
 
-이 문서는 실제 데모 진행 순서대로 적어둔 "진행 스크립트"입니다.
+이 문서는 발표/심사장에서 그대로 따라 할 수 있는 데모 진행 스크립트입니다.
 
 핵심 목표:
-- x402 스타일의 `402 → paid request` 흐름을 보여준다
-- 성능 기반 정산(`max_price`에서 자동 환불) 결과를 보여준다
-- SKALE 테스트넷에 컨트랙트를 배포하고, 실제 `tx_hash`를 보여준다
-- Seller는 **Google Gemini**를 사용한 “실제 LLM 서비스”여야 한다
+- x402 스타일의 `402 → paid request` 경험을 보여준다
+- Seller가 **Google Gemini**로 실제 작업(Invoice 생성)을 수행함을 증거로 보여준다
+- Gateway가 SLA를 **결정적으로** 측정/검증/가격결정하고 receipt + event timeline을 남긴다
+- SKALE 테스트넷(BITE v2 Sandbox 2)에서 `deposit → settle` 트랜잭션 해시를 보여준다
 
-## 데모 구성(한 줄 요약)
+## 데모 구성(한 줄)
 
-Buyer(스크립트/에이전트) → Gateway(`/v1/call`) → Seller(LLM: Gemini) → Receipt 생성/검증/가격결정 → SKALE 온체인 정산
+Buyer(웹 콘솔/스크립트) → Gateway(`/v1/call`) → Seller(Gemini) → receipt/events → SKALE 온체인 정산
 
-## 에이전트 역할(반드시 이렇게 설명)
+## 에이전트 역할(발표용)
 
 | 역할 | 코드 경로 | LLM 사용 | 핵심 책임 |
 |------|----------|---------|----------|
-| **Buyer Agent** | `buyer_agent/main.py`, `buyer_agent/client.py` | Gemini (협상) | 요구사항 정리/협상, 402 결제, 결과 검증(결정적), dispute |
-| **Seller Agent/Service** | `seller/main.py`, `seller/gemini_client.py` | Gemini (작업 수행) | capabilities/quote 제공, 실제 작업 수행(LLM), 스키마 준수 출력 |
-| **Gateway** | `gateway/app/main.py`, `gateway/app/pricing.py`, `gateway/app/validators/` | 사용 안 함 | 측정/검증(결정적), pricing(결정적), receipt 발급, 온체인 정산 제출 |
-| **Resolver** | `scripts/resolve_dispute.py` | 사용 안 함 | dispute 해결, 최종 payout 결정 |
+| Buyer(웹/스크립트) | `dashboard/console.html`, `scripts/run_demo.py` | (현재는 사용 안 함) | SLA 오퍼 선택/mandate 등록, 402 결제, 결과 확인 |
+| Buyer Agent(옵션) | `buyer_agent/*` | (현재는 사용 안 함) | (옵션) 자동 실행 + receipt invariant 검증 + attestation |
+| Seller Service | `seller/main.py` | **Gemini** | 실제 작업 수행(생성), SLA 시뮬레이션(지연/오류/무효/타임아웃), mandate 수락 |
+| Gateway | `gateway/app/main.py` | 사용 안 함 | 측정/검증(결정적), pricing(결정적), receipt/events, 온체인 tx 제출 |
+| Settlement Contract | `contracts/src/SLASettlement.sol` | 사용 안 함 | escrow `deposit()`, 조건 확정 `settle()`, 분쟁/최종화 |
 
-주의: Gateway의 검증/가격결정/정산은 LLM이 하면 재현성이 깨지므로 "결정적 로직"으로 유지합니다.
-상세 역할 정의: `docs/ARCHITECTURE.md` → "Agent Roles & Trust Boundaries" 참조.
+주의: Gateway의 검증/가격결정/온체인 제출은 LLM이 하면 재현성이 깨지므로 **결정적 로직**으로 유지합니다.
 
-## 0. 준비물
+---
 
-- Python 3.11+
-- Foundry (`forge`, `cast`)
-- SKALE 해커톤 체인(BITE v2 Sandbox 2) RPC 접근
-- Seller 서비스(LLM Gemini 사용) 실행 주소
+## 0. 체인/토큰(고정 값)
 
-## 1. 컨트랙트 배포 (SKALE BITE v2 Sandbox 2)
-
-네트워크(해커톤 문서 기준):
+체인: SKALE Hackathon — BITE v2 Sandbox 2
 - Chain ID: `103698795`
 - RPC: `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
 - Explorer: `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
-- (참고) USDC: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- Gas token: `sFUEL`
+
+토큰: predeployed USDC (6 decimals)
+- USDC 주소: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- x402(EIP-712) 도메인:
+  - `SLA_TOKEN_NAME=USDC`
+  - `SLA_TOKEN_VERSION=""` (빈 문자열)
 
 중요(배포 실패 방지):
 - 이 체인은 EVM 버전이 **Istanbul 이하**여야 배포가 됩니다.
-- 이 레포는 `contracts/foundry.toml`에 `evm_version = "istanbul"`로 고정되어 있습니다.
+- 이 레포는 `contracts/foundry.toml`에서 `evm_version = "istanbul"`로 맞춰둔 상태입니다.
 
-지갑 네트워크 추가(수동):
-- Network Name: `SKALE BITE v2 Sandbox 2`
-- RPC URL: `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
-- Chain ID: `103698795`
-- Currency Symbol: `sFUEL`
-- Block Explorer URL: `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
+---
 
-Faucet/자금 준비:
-- 이 체인의 가스는 `sFUEL`입니다. `sFUEL`(gas) 또는 `USDC`가 필요하면 SKALE Builders Telegram에서 요청해야 합니다:
-  - SKALE Builders Telegram: `https://t.me/+dDdvu5T6BOEzZDEx`
-  - 채널에서 @TheGreatAxios 를 태그해서 `sFUEL`/`USDC` 지원을 요청
-- (x402/정산 토큰) 이번 데모는 **기존 USDC**를 사용합니다(6 decimals).
+## 1. 환경변수(.env) 한 군데서 관리
 
-배포는 가장 단순하게 EOA 하나를 `deployer = gateway = resolver`로 씁니다.
+이 레포는 **레포 루트 `/.env` 파일 1개**로 Gateway/Seller/스크립트 설정을 관리합니다(자동 로딩).
 
 ```bash
-cd contracts
-export RPC_URL="https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox"
-export PRIVATE_KEY="0x..."
-export TOKEN_ADDRESS="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"  # USDC (predeployed)
+cp .env.example .env
+```
 
+`.env`에서 반드시 채울 값:
+- `PRIVATE_KEY` (컨트랙트 배포용)
+- `GATEWAY_PRIVATE_KEY` (gateway 온체인 tx signer)
+- `SETTLEMENT_CONTRACT_ADDRESS` (배포 후 채움)
+- `GEMINI_API_KEY` (Seller가 실제 Gemini 호출하려면 필요)
+
+같은 지갑(EOA)로 묶어도 되는 것(데모 단순화):
+- `PRIVATE_KEY` = `GATEWAY_PRIVATE_KEY` (권장: 배포 스크립트가 approve까지 잡아주기 쉬움)
+- Resolver는 배포 시 `RESOLVER_ADDRESS`를 Gateway 주소로 동일하게 둬도 됨
+
+중요(현재 구현 제약):
+- 요청마다 `deposit()` tx의 **payer는 현재 gateway EOA**입니다. 즉 `GATEWAY_PRIVATE_KEY` 주소에 USDC가 있어야 합니다.
+
+---
+
+## 2. Faucet/자금 준비
+
+필요:
+- `sFUEL` (가스)
+- `USDC` (현재 구현에서는 gateway EOA가 deposit에 사용)
+
+가장 확실한 방법:
+- SKALE Builders Telegram: `https://t.me/+dDdvu5T6BOEzZDEx`
+- 채널에서 @TheGreatAxios 를 태그해서 `sFUEL`/`USDC` 지원 요청
+
+---
+
+## 3. 컨트랙트 배포 (SKALE BITE v2 Sandbox 2)
+
+`forge`/`cast`는 쉘 env를 보므로, `.env`를 export로 로드해서 씁니다:
+
+```bash
+set -a
+source .env
+set +a
+
+cd contracts
 forge script script/DeploySlaPayV2.s.sol:DeploySlaPayV2 \
   --rpc-url "$RPC_URL" \
   --broadcast \
   -vvvv
 ```
 
-출력으로 다음 2개 주소를 확보합니다:
-- `Token` (USDC)
-- `SLASettlement`
+출력에서 `SLASettlement` 주소를 복사해서 `.env`의 `SETTLEMENT_CONTRACT_ADDRESS`에 채웁니다.
 
-## 2. Gateway 환경변수 세팅 (라이브 체인)
+---
 
-Gateway는 `.env` 자동 로딩이 아니라, 실행 쉘에서 `export`로 주입합니다.
+## 4. 서비스 실행
 
-```bash
-source .venv/bin/activate
-
-export PAYMENT_MODE="hmac"   # 데모 안정성 우선(키 없이 가능). x402 모드는 아래 참고
-export CHAIN_ID="103698795"
-export CHAIN_RPC_URL="https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox"
-export PAYMENT_TOKEN_ADDRESS="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"  # USDC
-export SETTLEMENT_CONTRACT_ADDRESS="0x..."      # SLASettlement
-export GATEWAY_PRIVATE_KEY="0x..."              # 배포에 사용한 PRIVATE_KEY와 동일 권장
-
-export SELLER_UPSTREAM_URL="http://localhost:8001"  # Gemini seller URL
-export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
-
-uvicorn gateway.app.main:app --port 8000
-```
-
-주의:
-- 온체인 정산을 하려면 `SELLER_ADDRESS`는 **반드시 유효한 EVM 주소**여야 합니다.
-
-## 3. Seller(Gemini) 실행
+### 4-1) Seller(Gemini)
 
 ```bash
 source .venv/bin/activate
-export GEMINI_API_KEY="..."          # Google Gemini API key
-export SELLER_ADDRESS="0x..."        # seller의 EVM 주소
-# GEMINI_API_KEY가 없으면 SELLER_FALLBACK=true로 결정적 응답 사용 가능
-# export SELLER_FALLBACK="true"
-
 uvicorn seller.main:app --port 8001
 ```
 
-Seller 서비스(코드: `seller/main.py`)는 Google Gemini로 invoice를 생성합니다:
-- `GET /seller/capabilities` — LLM 모델/사용가능 여부 확인
-- `POST /seller/call?mode=fast|slow|invalid` — Gemini로 작업 수행
-- 응답 JSON은 `invoice_v1` 스키마를 만족해야 합니다: `gateway/app/validators/schemas/invoice_v1.json`
-- LLM 사용 증거: 응답 헤더 `X-LLM-Model`, `X-LLM-Provider`
+주요 엔드포인트:
+- `GET /seller/capabilities`
+- `POST /seller/mandates/accept` (buyer 제안 mandate 수락)
+- `POST /seller/call?mode=fast|slow|invalid|error|timeout&delay_ms=...`
 
-## 4. 데모 실행(3 시나리오)
+LLM 사용 증거(데모용):
+- 응답 헤더 `X-LLM-Provider`, `X-LLM-Model`, `X-LLM-Used`, `X-LLM-Mode`
+
+### 4-2) Gateway
 
 ```bash
 source .venv/bin/activate
-
-export GATEWAY_URL="http://localhost:8000"
-export BUYER_ADDRESS="0x1111111111111111111111111111111111111111"
-export SELLER_ADDRESS="0x2222222222222222222222222222222222222222"
-
-python scripts/run_demo.py
+uvicorn gateway.app.main:app --port 8000
 ```
 
-기대 결과:
-- 각 시나리오에서 첫 요청은 `402 Payment Required`
-- paid 요청은 `payout/refund/receipt_hash/tx_hash`를 반환
-- `tx_hash`가 실제 해시로 찍히면 “SKALE 온체인 정산” 성공
-
-노트(중요):
-- 현재 컨트랙트는 `deposit()` 선행이 필요한 escrow 구조입니다.
-- gateway가 `deposit → settle`을 자동으로 연결하지 못한 상태면 라이브 체인에서 settle tx가 revert될 수 있습니다(티켓: `TICKET.md`의 `T-123`).
-
-## 5. x402 모드(옵션)
-
-Gateway는 `PAYMENT_MODE=x402`도 지원합니다.
-이 모드는 `X-PAYMENT`에 EIP-712 서명된 Authorization을 넣고, gateway가 서명 검증까지 수행합니다.
-
-현재 MVP의 온체인 자금 흐름은 gateway escrow 기반이라, “결제 authorization”과 “온체인 자금 이동”은 분리되어 있습니다.
-
-사용 예:
-```bash
-export PAYMENT_MODE="x402"
-export BUYER_ADDRESS="0x..."
-export BUYER_PRIVATE_KEY="0x..."
-export PAYMENT_TOKEN_ADDRESS="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"
-export CHAIN_ID="103698795"
-# USDC EIP-712 domain
-export SLA_TOKEN_NAME="USDC"
-export SLA_TOKEN_VERSION=""
-```
-
-그 상태로 `python scripts/run_demo.py`를 실행하면 됩니다.
-
-## 대시보드
-
-Gateway가 실행 중이면 same-origin으로 접속 가능합니다:
+대시보드(same-origin):
 - Demo Console: `http://localhost:8000/dashboard/console.html`
 - Receipt Ledger: `http://localhost:8000/dashboard/index.html`
 
-대시보드 기능:
-- SLA 오퍼 선택 (Bronze/Silver/Gold)
-- 시뮬레이터 컨트롤 (레이턴시 슬라이더, 실패 토글)
-- Receipt 테이블 (breach reasons 표시)
-- 이벤트 타임라인 (SLA 위반 필터)
+---
+
+## 5. 데모 실행(웹 콘솔, 추천)
+
+1. `http://localhost:8000/dashboard/console.html` 접속
+2. `Refresh All` 클릭
+3. `Seller Capabilities`가 Gemini로 뜨는지 확인
+4. `SLA Offer Catalog`에서 Bronze/Silver/Gold 중 하나 선택 후 `Negotiate`
+5. 시뮬레이터 조작:
+   - 지연 슬라이더(`delay_ms`)
+   - 실패 토글(Invalid/Error/Timeout)
+6. `Run Demo` 클릭
+7. 아래를 한 화면에서 설명:
+   - `402 → paid request` 흐름
+   - breach reasons(왜 SLA가 깨졌는지)
+   - receipt hash
+   - `deposit_tx_hash`, `settle_tx_hash` (Explorer에서 확인)
+
+---
+
+## 6. 데모 실행(CLI 옵션)
+
+간단 시나리오 러너:
+```bash
+source .venv/bin/activate
+python scripts/run_demo.py
+```
+
+Buyer Agent(옵션, attestation까지 보고 싶을 때):
+```bash
+source .venv/bin/activate
+python -m buyer_agent.main
+```
+
+---
+
+## 7. x402 모드(옵션)
+
+현재 `scripts/run_demo.py`는 `PAYMENT_MODE=x402`를 지원합니다.
+다만 웹 콘솔의 `/v1/demo/run`은 내부적으로 Buyer Agent(HMAC)를 사용하므로, x402 데모는 CLI로 보여주는 것을 권장합니다.
+
+`.env` 예:
+- `PAYMENT_MODE=x402`
+- `BUYER_PRIVATE_KEY=...`
+- `PAYMENT_TOKEN_ADDRESS=0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- `SLA_TOKEN_NAME=USDC`
+- `SLA_TOKEN_VERSION=`
+
+노트:
+- HTTP 레벨의 x402(402→paid)은 “결제 증명/게이팅”이고,
+- 실제 escrow 자금 이동은 현재 `deposit()` 트랜잭션으로 연결되어 있습니다.
+
+---
+
+## 8. 발표용 API 치트시트
+
+- Receipts: `GET /v1/receipts`
+- Events: `GET /v1/events`
+- Offer presets: `GET /v1/demo/offers`
+- Demo run: `POST /v1/demo/run`
+

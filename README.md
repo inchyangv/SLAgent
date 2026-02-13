@@ -1,22 +1,22 @@
-# SLA-Pay v2
+# SLAgent-402
 
 **Don't pay upfront. Pay by proof.**
 
-SLA-Pay v2 is a pay-by-performance settlement layer for agent-to-agent API calls.
+SLAgent-402 is a pay-by-performance settlement layer for agent-to-agent API calls.
 It measures QoS + deterministic validity, generates signed Performance Receipts,
 and settles payment on-chain with automatic split + refund.
 
 ## Architecture
 
 ```
-Buyer Agent ──► SLA-Pay Gateway ──► Seller Agent
+Buyer Agent ──► SLAgent-402 Gateway ──► Seller Agent
                     │
                     ├── Measures TTFT / latency
                     ├── Runs validators (JSON schema)
                     ├── Generates Performance Receipt
                     └── Submits on-chain settlement
                             │
-                    Settlement Contract (SKALE)
+                    Settlement Contract (SKALE Base Sepolia (BITE v2 Sandbox 2))
                     ├── Pays seller (payout)
                     ├── Refunds buyer (max_price - payout)
                     └── Emits receipt hash

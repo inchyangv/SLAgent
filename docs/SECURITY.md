@@ -1,9 +1,9 @@
-# Security Notes & Threat Model — SLA-Pay v2
+# Security Notes & Threat Model — SLAgent-402
 
 ## Overview
 
 This document describes the security model, trust assumptions, and known limitations
-of SLA-Pay v2 as implemented for the hackathon MVP.
+of SLAgent-402 as implemented for the hackathon MVP.
 
 ## Trust Model
 
