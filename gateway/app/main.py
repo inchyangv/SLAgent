@@ -22,8 +22,9 @@ from gateway.app.events import event_store
 from gateway.app.mandates import mandate_store
 from gateway.app.metrics import RequestMetrics
 from gateway.app.models import Metrics, PricingResult
-from gateway.app.pricing import compute_payout
+from gateway.app.pricing import PricingDecision, compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
+from gateway.app.llm_policy import evaluate_sla_with_gemini, suggest_mandate_with_gemini
 from gateway.app.settlement_client import (
     settle_request,
     submit_dispute_open,
@@ -256,6 +257,42 @@ async def get_mandate(mandate_id: str) -> JSONResponse:
     return JSONResponse(content=mandate)
 
 
+@app.post("/v1/negotiation/suggest")
+async def suggest_negotiation_terms(request: Request) -> JSONResponse:
+    """Return Gemini-driven SLA/price negotiation suggestions.
+
+    Body:
+      {
+        "mandate": {...},
+        "seller_capabilities": {...}
+      }
+    """
+    body = await request.json()
+    mandate = body.get("mandate", body if isinstance(body, dict) else {})
+    if not isinstance(mandate, dict):
+        raise HTTPException(status_code=400, detail="mandate must be a JSON object")
+    seller_caps = body.get("seller_capabilities", {}) if isinstance(body, dict) else {}
+
+    suggestion = await suggest_mandate_with_gemini(
+        mandate=mandate,
+        seller_capabilities=seller_caps if isinstance(seller_caps, dict) else {},
+    )
+    if not suggestion:
+        return JSONResponse(content={"mode": "disabled", "suggestion": None})
+
+    event_store.record(
+        kind="negotiation.llm_suggested",
+        actor="gateway",
+        mandate_id=mandate.get("mandate_id", ""),
+        data={
+            "accepted": suggestion.get("accepted"),
+            "summary": suggestion.get("summary"),
+            "model": suggestion.get("model"),
+        },
+    )
+    return JSONResponse(content=suggestion)
+
+
 @app.post("/v1/call")
 async def call_endpoint(request: Request) -> JSONResponse:
     """Main proxy endpoint with x402 payment gating.
@@ -394,14 +431,78 @@ async def call_endpoint(request: Request) -> JSONResponse:
         data={"overall_pass": overall_pass, "results_count": len(validation_results)},
     )
 
-    # Compute pricing
+    # Compute baseline pricing (deterministic rules).
     pricing_decision = compute_payout(
         mandate=mandate,
         latency_ms=metrics.latency_ms,
         success=success,
         validation_pass=overall_pass,
     )
+
+    # Optional Gemini policy layer:
+    # - can downgrade SLA pass/fail judgement
+    # - can negotiate payout recommendation within hard bounds [0, max_price]
+    llm_policy = await evaluate_sla_with_gemini(
+        mandate=mandate,
+        seller_response=seller_json if isinstance(seller_json, dict) else {},
+        success=success,
+        schema_validation_pass=overall_pass,
+        latency_ms=metrics.latency_ms,
+    )
+    if llm_policy:
+        llm_sla_pass = llm_policy.get("sla_pass")
+        if llm_sla_pass is False and overall_pass:
+            overall_pass = False
+            validation["overall_pass"] = False
+            validation_results.append({
+                "type": "llm_sla",
+                "schema_id": None,
+                "pass": False,
+                "details": llm_policy.get("reason", "llm judged sla fail"),
+            })
+            pricing_decision = compute_payout(
+                mandate=mandate,
+                latency_ms=metrics.latency_ms,
+                success=success,
+                validation_pass=False,
+            )
+
+        llm_payout = llm_policy.get("recommended_payout")
+        if (
+            isinstance(llm_payout, int)
+            and success
+            and overall_pass
+        ):
+            max_price_int = int(pricing_decision.max_price)
+            bounded = max(0, min(llm_payout, max_price_int))
+            if bounded != pricing_decision.payout:
+                llm_breaches = list(pricing_decision.breach_reasons)
+                if bounded < max_price_int and "BREACH_LLM_NEGOTIATED_DOWN" not in llm_breaches:
+                    llm_breaches.append("BREACH_LLM_NEGOTIATED_DOWN")
+                pricing_decision = PricingDecision(
+                    max_price=max_price_int,
+                    payout=bounded,
+                    refund=max_price_int - bounded,
+                    rule_applied="llm_negotiated",
+                    breach_reasons=llm_breaches,
+                )
+
+        event_store.record(
+            kind="llm.sla_judged",
+            actor="gateway",
+            request_id=request_id,
+            mandate_id=mandate_id,
+            data={
+                "model": llm_policy.get("model"),
+                "sla_pass": llm_policy.get("sla_pass"),
+                "recommended_payout": llm_policy.get("recommended_payout"),
+                "confidence": llm_policy.get("confidence"),
+                "reason": llm_policy.get("reason"),
+            },
+        )
+
     breach_reasons = list(pricing_decision.breach_reasons)
+    outcome["llm_policy"] = llm_policy or {"mode": "disabled"}
     pricing = PricingResult(
         max_price=str(pricing_decision.max_price),
         computed_payout=str(pricing_decision.payout),
@@ -576,6 +677,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
             "instant_resolve_tx_hash": instant_resolve_tx,
             "instant_payout_mode": instant_payout_mode,
             "breach_reasons": breach_reasons,
+            "llm_policy": llm_policy,
         }
     )
 
@@ -946,6 +1048,7 @@ async def demo_run(request: Request) -> JSONResponse:
                 "tx_hash": result.tx_hash,
                 "deposit_tx_hash": result.deposit_tx_hash,
                 "settle_tx_hash": result.settle_tx_hash,
+                "llm_policy": result.llm_policy,
                 "latency_ms": result.metrics.get("latency_ms"),
                 "delay_ms_applied": sim_delay_ms,
                 "attestations": {

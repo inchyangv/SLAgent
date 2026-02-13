@@ -75,6 +75,7 @@
         .eval-card { background: #0d131a; border: 1px solid #1d2732; border-radius: 6px; padding: 8px; }
         .eval-label { font-size: 0.65rem; color: #6f8193; text-transform: uppercase; margin-bottom: 3px; }
         .eval-value { font-size: 0.8rem; color: #d8ebff; font-family: monospace; }
+        .eval-value-wrap { font-size: 0.75rem; color: #d8ebff; line-height: 1.25; }
         .muted { color: #777; font-size: 0.74rem; }
         @media (max-width: 980px) {
             .top-shell { flex-direction: column; }
@@ -156,6 +157,11 @@
         <div class="eval-card"><div class="eval-label">SLA Status</div><div id="eval-sla" class="eval-value">-</div></div>
         <div class="eval-card"><div class="eval-label">Payout</div><div id="eval-payout" class="eval-value">-</div></div>
         <div class="eval-card"><div class="eval-label">Refund</div><div id="eval-refund" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">LLM Judge</div><div id="eval-llm-judge" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">LLM Model</div><div id="eval-llm-model" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">LLM Payout</div><div id="eval-llm-payout" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">LLM Confidence</div><div id="eval-llm-confidence" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">LLM Reason</div><div id="eval-llm-reason" class="eval-value-wrap">-</div></div>
     </div>
 </div>
 
@@ -275,13 +281,14 @@
                     <th>Payout</th>
                     <th>Refund</th>
                     <th>Rule</th>
+                    <th>LLM Policy</th>
                     <th>Breaches</th>
                     <th>Attest</th>
                     <th>Hash</th>
                 </tr>
             </thead>
             <tbody id="receipts-body">
-                <tr><td colspan="9" class="empty">No receipts</td></tr>
+                <tr><td colspan="10" class="empty">No receipts</td></tr>
             </tbody>
         </table>
     </div>
@@ -293,6 +300,7 @@
         <span class="close-btn" onclick="closeModal()">&times;</span>
         <h2 id="modal-title" style="margin-bottom:10px">Receipt Detail</h2>
         <div id="modal-attest" style="margin-bottom:10px"></div>
+        <div id="modal-llm" style="margin-bottom:10px"></div>
         <div id="modal-breach" style="margin-bottom:10px"></div>
         <pre id="modal-json"></pre>
     </div>
@@ -465,12 +473,32 @@
         const full = pass && maxPrice > 0 && payout >= maxPrice;
         const slaClass = full ? 'badge-pass' : (pass ? 'badge-partial' : 'badge-fail');
         const slaText = full ? 'PASS (FULL)' : (pass ? 'PASS (DEGRADED)' : 'BREACH');
+        const llm = result?.llm_policy || {};
+        const llmMode = llm?.mode || 'disabled';
+        const llmJudgePass = llm?.sla_pass;
+        const llmJudgeHtml = llmMode === 'llm'
+            ? `<span class="badge ${llmJudgePass ? 'badge-pass' : 'badge-fail'}">${llmJudgePass ? 'PASS' : 'FAIL'}</span>`
+            : '<span class="badge badge-info">OFF</span>';
+        const llmModel = llm?.model || '-';
+        const llmPayout = Number.isFinite(Number(llm?.recommended_payout))
+            ? `${(parseInt(llm.recommended_payout, 10) / 1e6).toFixed(4)} USDC`
+            : '-';
+        const llmConf = Number.isFinite(Number(llm?.confidence))
+            ? `${(Number(llm.confidence) * 100).toFixed(1)}%`
+            : '-';
+        const llmReason = llm?.reason ? String(llm.reason) : '-';
 
         document.getElementById('eval-mode').textContent = mode || '-';
         document.getElementById('eval-request').textContent = result?.request_id || '-';
         document.getElementById('eval-sla').innerHTML = `<span class="badge ${slaClass}">${slaText}</span>`;
         document.getElementById('eval-payout').textContent = `${(payout / 1e6).toFixed(4)} USDC`;
         document.getElementById('eval-refund').textContent = `${(refund / 1e6).toFixed(4)} USDC`;
+        document.getElementById('eval-llm-judge').innerHTML = llmJudgeHtml;
+        document.getElementById('eval-llm-model').textContent = llmModel;
+        document.getElementById('eval-llm-payout').textContent = llmPayout;
+        document.getElementById('eval-llm-confidence').textContent = llmConf;
+        document.getElementById('eval-llm-reason').textContent = llmReason;
+        document.getElementById('eval-llm-reason').title = llmReason;
     }
 
     async function runAutopilotTick() {
@@ -500,8 +528,12 @@
             const data = await resp.json();
             const result = (data.results || [])[0] || {};
             updateEvaluator(result, mode);
+            const llm = result?.llm_policy || {};
+            const llmTag = llm?.mode === 'llm'
+                ? ` llm=${llm.sla_pass ? 'pass' : 'fail'} conf=${Number.isFinite(Number(llm.confidence)) ? Number(llm.confidence).toFixed(2) : '-'}`
+                : ' llm=off';
             addLog(
-                `Autopilot: mode=${mode} req=${result.request_id || '-'} payout=${result.payout || '0'} refund=${result.refund || '0'}`,
+                `Autopilot: mode=${mode} req=${result.request_id || '-'} payout=${result.payout || '0'} refund=${result.refund || '0'}${llmTag}`,
                 result.ok ? 'ok' : 'err',
             );
             await fetchReceipts({silent: true});
@@ -762,7 +794,7 @@
         if (currentFilter === 'fail') filtered = allReceipts.filter(r => !r.validation?.overall_pass);
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="empty">No receipts</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="empty">No receipts</td></tr>';
             updateStats(); return;
         }
 
@@ -790,6 +822,15 @@
             const breachHtml = breaches.length > 0
                 ? breaches.map(b => `<span class="badge badge-fail" style="font-size:0.6rem;margin:1px">${b.replace('BREACH_','')}</span>`).join('')
                 : '<span style="color:#555;font-size:0.7rem">-</span>';
+            const llmPolicy = r.outcome?.llm_policy || {};
+            let llmHtml = '<span class="badge badge-info">OFF</span>';
+            if (llmPolicy.mode === 'llm') {
+                const judgePass = Boolean(llmPolicy.sla_pass);
+                const conf = Number.isFinite(Number(llmPolicy.confidence))
+                    ? `${(Number(llmPolicy.confidence) * 100).toFixed(0)}%`
+                    : '-';
+                llmHtml = `<span class="badge ${judgePass ? 'badge-pass' : 'badge-fail'}">${judgePass ? 'PASS' : 'FAIL'}</span> <span class="mono" style="font-size:0.62rem;color:#7f95ad">${conf}</span>`;
+            }
             return `<tr onclick="showReceipt('${r.request_id}')">
                 <td class="mono" style="font-size:0.72rem">${r.request_id}</td>
                 <td>${latency}ms</td>
@@ -797,6 +838,7 @@
                 <td><span class="badge ${payBadge}">${(payout/1e6).toFixed(4)}</span></td>
                 <td class="mono">${(refund/1e6).toFixed(4)}</td>
                 <td>${rule}</td>
+                <td>${llmHtml}</td>
                 <td>${breachHtml}</td>
                 <td><div class="attest-dots">${dots}</div></td>
                 <td class="hash" title="${hash}">${shortHash}</td>
@@ -848,6 +890,25 @@
                 breachHtml += breaches.map(b => `<span class="badge badge-fail" style="margin:2px">${b}</span>`).join(' ');
                 breachHtml += '</div>';
             }
+            const llmPolicy = data.outcome?.llm_policy || {};
+            let llmHtml = '<div><strong>LLM Policy:</strong> <span class="badge badge-info">OFF</span></div>';
+            if (llmPolicy.mode === 'llm') {
+                const judgePass = Boolean(llmPolicy.sla_pass);
+                const conf = Number.isFinite(Number(llmPolicy.confidence))
+                    ? `${(Number(llmPolicy.confidence) * 100).toFixed(1)}%`
+                    : '-';
+                const llmPayout = Number.isFinite(Number(llmPolicy.recommended_payout))
+                    ? `${(parseInt(llmPolicy.recommended_payout, 10) / 1e6).toFixed(4)} USDC`
+                    : '-';
+                llmHtml = '<div style="margin-bottom:8px"><strong>LLM Policy:</strong> ' +
+                    `<span class="badge ${judgePass ? 'badge-pass' : 'badge-fail'}">${judgePass ? 'PASS' : 'FAIL'}</span> ` +
+                    `<span class="badge badge-info">${llmPolicy.model || 'gemini'}</span> ` +
+                    `<span class="badge badge-info">conf=${conf}</span> ` +
+                    `<span class="badge badge-info">payout=${llmPayout}</span>` +
+                    (llmPolicy.reason ? `<div class="mono" style="margin-top:4px;color:#9bb8d6">${llmPolicy.reason}</div>` : '') +
+                    '</div>';
+            }
+            document.getElementById('modal-llm').innerHTML = llmHtml;
             document.getElementById('modal-breach').innerHTML = breachHtml;
             document.getElementById('modal-json').textContent = JSON.stringify(data, null, 2);
             document.getElementById('modal').style.display = 'block';
@@ -859,6 +920,7 @@
     function showJSON(jsonStr, title) {
         document.getElementById('modal-title').textContent = title || 'Detail';
         document.getElementById('modal-attest').innerHTML = '';
+        document.getElementById('modal-llm').innerHTML = '';
         document.getElementById('modal-json').textContent = JSON.stringify(JSON.parse(jsonStr), null, 2);
         document.getElementById('modal').style.display = 'block';
     }

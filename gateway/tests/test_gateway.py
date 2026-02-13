@@ -13,7 +13,9 @@ from gateway.app.x402 import create_payment_token
 
 
 @pytest.fixture(autouse=True)
-def clear_stores():
+def clear_stores(monkeypatch):
+    monkeypatch.setenv("LLM_POLICY_ENABLED", "false")
+    monkeypatch.setenv("LLM_NEGOTIATION_ENABLED", "false")
     receipt_store._cache.clear()
     mandate_store._mandates.clear()
     yield

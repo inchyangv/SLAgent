@@ -76,6 +76,7 @@ class BuyerResult:
     invariant_checks: list[dict[str, Any]]
     deposit_tx_hash: str | None = None
     settle_tx_hash: str | None = None
+    llm_policy: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     attestation_status: dict[str, Any] = field(default_factory=dict)
 
@@ -137,6 +138,29 @@ class BuyerAgent:
         mandate["buyer"] = self.buyer_address
         mandate["seller"] = seller_address
         mandate["max_price"] = self.max_price
+
+        # Optional: ask gateway LLM policy for SLA/price negotiation suggestion.
+        # This is fail-open; if unavailable we keep the original buyer mandate.
+        if os.getenv("LLM_NEGOTIATION_ENABLED", "false").lower() in ("1", "true", "yes", "on"):
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    sugg = await client.post(
+                        f"{self.gateway_url}/v1/negotiation/suggest",
+                        json={"mandate": mandate, "seller_capabilities": seller_capabilities},
+                    )
+                if sugg.status_code == 200:
+                    data = sugg.json()
+                    terms = data.get("suggested_terms", {})
+                    if isinstance(terms, dict):
+                        if "max_price" in terms:
+                            mandate["max_price"] = str(terms["max_price"])
+                            self.max_price = str(terms["max_price"])
+                        if "base_pay" in terms:
+                            mandate["base_pay"] = str(terms["base_pay"])
+                        if isinstance(terms.get("bonus_rules"), dict):
+                            mandate["bonus_rules"] = terms["bonus_rules"]
+            except Exception as e:
+                logger.info("LLM negotiation suggestion skipped: %s", e)
 
         # Verify seller supports required schema
         required_schemas = {v["schema_id"] for v in mandate.get("validators", []) if "schema_id" in v}
@@ -411,6 +435,9 @@ class BuyerAgent:
         tx_hash = data.get("tx_hash")
         deposit_tx_hash = data.get("deposit_tx_hash") or deposit_tx_hash
         settle_tx_hash = data.get("settle_tx_hash")
+        llm_policy = data.get("llm_policy", {})
+        if not isinstance(llm_policy, dict):
+            llm_policy = {}
         seller_response = data.get("seller_response", {})
 
         # Step 3: Verify invariants (fail-closed)
@@ -437,6 +464,7 @@ class BuyerAgent:
             tx_hash=tx_hash,
             deposit_tx_hash=deposit_tx_hash,
             settle_tx_hash=settle_tx_hash,
+            llm_policy=llm_policy,
             seller_response=seller_response,
             invariant_checks=checks,
             error=f"Invariant violations: {violations}" if violations else None,
