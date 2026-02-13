@@ -931,7 +931,7 @@ Add an ERC-8004-compatible orchestration hook (or minimal adapter) to show align
 ---
 
 ## T-129 — Mandate Negotiation + Enforcement (No More DEFAULT_MANDATE)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-020, T-119, T-120, T-121
 
@@ -949,8 +949,16 @@ SLA를 "문서"가 아니라 "협상된 객체"로 만들고 gateway가 강제(e
   - `mandate_id`, `buyer`, `seller`, `gateway`
 
 ### Acceptance Criteria
-- demo에서 “협상된 mandate”가 보여야 하고, gateway가 그 mandate로 정산을 수행한다
+- demo에서 "협상된 mandate"가 보여야 하고, gateway가 그 mandate로 정산을 수행한다
 - receipt에 `mandate_id`가 항상 non-empty로 들어간다
+
+### Completion Notes
+- gateway/app/mandates.py: MandateStore (in-memory), register/get/list_all
+- gateway/app/main.py: POST /v1/mandates, GET /v1/mandates, GET /v1/mandates/{id}
+- /v1/call: mandate_id in body → lookup mandate, reject unknown; fallback to DEFAULT_MANDATE
+- receipt/settlement에 mandate_id, buyer, seller 필드 채워짐
+- 6 new gateway tests (mandate CRUD + call with mandate), 153 total passed
+- Validate: `pytest gateway/tests/ -v`
 
 ---
 

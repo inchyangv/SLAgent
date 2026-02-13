@@ -7,15 +7,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gateway.app.main import app
+from gateway.app.mandates import mandate_store
 from gateway.app.receipt import receipt_store
 from gateway.app.x402 import create_payment_token
 
 
 @pytest.fixture(autouse=True)
-def clear_receipts():
+def clear_stores():
     receipt_store._cache.clear()
+    mandate_store._mandates.clear()
     yield
     receipt_store._cache.clear()
+    mandate_store._mandates.clear()
 
 
 client = TestClient(app)
@@ -105,3 +108,95 @@ def test_list_receipts():
     resp = client.get("/v1/receipts?limit=10")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+# --- Mandate endpoint tests ---
+
+
+def test_register_mandate():
+    mandate = {
+        "max_price": "100000",
+        "base_pay": "60000",
+        "bonus_rules": {"type": "latency_tiers", "tiers": [{"lte_ms": 2000, "payout": "100000"}]},
+        "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
+    }
+    resp = client.post("/v1/mandates", json=mandate)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["mandate_id"].startswith("0x")
+    assert data["max_price"] == "100000"
+
+
+def test_get_mandate():
+    mandate = {"max_price": "100000", "validators": []}
+    resp = client.post("/v1/mandates", json=mandate)
+    mid = resp.json()["mandate_id"]
+    resp2 = client.get(f"/v1/mandates/{mid}")
+    assert resp2.status_code == 200
+    assert resp2.json()["mandate_id"] == mid
+
+
+def test_get_mandate_not_found():
+    resp = client.get("/v1/mandates/0xnonexistent")
+    assert resp.status_code == 404
+
+
+def test_list_mandates():
+    client.post("/v1/mandates", json={"max_price": "100000", "validators": []})
+    resp = client.get("/v1/mandates")
+    assert resp.status_code == 200
+    assert resp.json()["count"] >= 1
+
+
+def test_call_with_mandate_id():
+    """Test /v1/call with a registered mandate_id."""
+    mandate = {
+        "max_price": "100000",
+        "base_pay": "60000",
+        "bonus_rules": {
+            "type": "latency_tiers",
+            "tiers": [
+                {"lte_ms": 2000, "payout": "100000"},
+                {"lte_ms": 5000, "payout": "80000"},
+                {"lte_ms": 999999999, "payout": "60000"},
+            ],
+        },
+        "validators": [{"type": "json_schema", "schema_id": "invoice_v1"}],
+    }
+    reg = client.post("/v1/mandates", json=mandate)
+    mid = reg.json()["mandate_id"]
+
+    seller_response = {"invoice_id": "INV-M", "amount": 100, "currency": "USD",
+                       "line_items": [{"description": "x", "quantity": 1, "unit_price": 100}]}
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = seller_response
+        mock_response.content = json.dumps(seller_response).encode()
+        mock_response.status_code = 200
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post(
+            "/v1/call",
+            json={"mandate_id": mid},
+            headers=_payment_header(),
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["mandate_id"] == mid
+
+
+def test_call_with_unknown_mandate_returns_400():
+    """Test /v1/call rejects unknown mandate_id."""
+    resp = client.post(
+        "/v1/call",
+        json={"mandate_id": "0xunknown"},
+        headers=_payment_header(),
+    )
+    assert resp.status_code == 400
+    assert "Unknown mandate_id" in resp.json()["detail"]

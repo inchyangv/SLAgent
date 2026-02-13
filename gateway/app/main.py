@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from gateway.app.config import settings
+from gateway.app.mandates import mandate_store
 from gateway.app.metrics import RequestMetrics
 from gateway.app.models import Metrics, PricingResult
 from gateway.app.pricing import compute_payout
@@ -26,13 +27,13 @@ from gateway.app.x402 import create_402_response, verify_payment_header
 
 logger = logging.getLogger("sla-gateway")
 
-app = FastAPI(title="SLA-Pay v2 Gateway", version="0.1.0")
+app = FastAPI(title="SLA-Pay v2 Gateway", version="0.2.0")
 
 # A2A/AP2 protocol routes
 from gateway.app.a2a.routes import router as a2a_router
 app.include_router(a2a_router)
 
-# Default mandate for demo (matches PROJECT.md)
+# Default mandate for demo fallback (matches PROJECT.md)
 DEFAULT_MANDATE = {
     "max_price": "100000",
     "base_pay": "60000",
@@ -53,11 +54,60 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# --- Mandate endpoints ---
+
+
+@app.post("/v1/mandates")
+async def register_mandate(request: Request) -> JSONResponse:
+    """Register a negotiated mandate. Returns the stored mandate with mandate_id."""
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Mandate must be a JSON object")
+    mandate = mandate_store.register(body)
+    logger.info(f"Mandate registered: {mandate.get('mandate_id', '')}")
+    return JSONResponse(content=mandate)
+
+
+@app.get("/v1/mandates")
+async def list_mandates(limit: int = 50) -> JSONResponse:
+    """List registered mandates."""
+    mandates = mandate_store.list_all(limit)
+    return JSONResponse(content={"mandates": mandates, "count": mandate_store.count()})
+
+
+@app.get("/v1/mandates/{mandate_id}")
+async def get_mandate(mandate_id: str) -> JSONResponse:
+    """Get a mandate by ID."""
+    mandate = mandate_store.get(mandate_id)
+    if mandate is None:
+        raise HTTPException(status_code=404, detail="Mandate not found")
+    return JSONResponse(content=mandate)
+
+
 @app.post("/v1/call")
 async def call_endpoint(request: Request) -> JSONResponse:
-    """Main proxy endpoint with x402 payment gating."""
+    """Main proxy endpoint with x402 payment gating.
+
+    Requires mandate_id in body. Falls back to DEFAULT_MANDATE if not provided
+    (for backward compatibility with existing demo scripts).
+    """
     body = await request.body()
-    mandate = DEFAULT_MANDATE
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    # Resolve mandate: look up by mandate_id or fall back to default
+    mandate_id = payload.get("mandate_id", "")
+    if mandate_id:
+        mandate = mandate_store.get(mandate_id)
+        if mandate is None:
+            raise HTTPException(status_code=400, detail=f"Unknown mandate_id: {mandate_id}")
+    else:
+        mandate = DEFAULT_MANDATE
+        mandate_id = ""
+
     max_price = mandate["max_price"]
 
     # x402: check for payment
@@ -77,11 +127,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
         )
 
     buyer = payment_info["buyer"]
-
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    seller_addr = mandate.get("seller") or settings.seller_address or settings.seller_upstream_url
+    gateway_addr = settings.gateway_private_key and "" or ""  # filled by settlement_client
 
     request_id = generate_request_id()
     rm = RequestMetrics()
@@ -103,9 +150,9 @@ async def call_endpoint(request: Request) -> JSONResponse:
             metrics = Metrics(ttft_ms=rm.ttft_ms, latency_ms=rm.latency_ms)
             receipt = build_receipt(
                 request_id=request_id,
-                mandate_id="",
+                mandate_id=mandate_id,
                 buyer=buyer,
-                seller="",
+                seller=seller_addr,
                 gateway_addr="",
                 metrics=metrics,
                 outcome={"success": False, "error_code": "upstream_error"},
@@ -159,9 +206,9 @@ async def call_endpoint(request: Request) -> JSONResponse:
 
     receipt = build_receipt(
         request_id=request_id,
-        mandate_id="",
+        mandate_id=mandate_id,
         buyer=buyer,
-        seller=settings.seller_address or settings.seller_upstream_url,
+        seller=seller_addr,
         gateway_addr="",
         metrics=metrics,
         outcome=outcome,
@@ -173,10 +220,9 @@ async def call_endpoint(request: Request) -> JSONResponse:
 
     # Submit settlement on-chain
     receipt_hash = receipt.hashes.get("receipt_hash", "")
-    seller_addr = settings.seller_address or settings.seller_upstream_url
     settlement_result = settle_request(
         request_id=request_id,
-        mandate_id="",
+        mandate_id=mandate_id,
         buyer=buyer,
         seller=seller_addr,
         max_price=pricing_decision.max_price,
@@ -191,7 +237,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
     tx_hash = settlement_result.get("tx_hash")
 
     logger.info(
-        f"Settled: req={request_id} buyer={buyer} "
+        f"Settled: req={request_id} mandate={mandate_id} buyer={buyer} "
         f"payout={pricing_decision.payout} refund={pricing_decision.refund} "
         f"rule={pricing_decision.rule_applied} tx={tx_hash}"
     )
@@ -199,6 +245,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
     return JSONResponse(
         content={
             "request_id": request_id,
+            "mandate_id": mandate_id,
             "seller_response": seller_json,
             "metrics": {"ttft_ms": metrics.ttft_ms, "latency_ms": metrics.latency_ms},
             "validation_passed": overall_pass,
