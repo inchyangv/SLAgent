@@ -27,6 +27,10 @@ contracts/broadcast/
 # Local data (runtime DB / exports)
 data/
 
+# Local-only guides
+DEMO.md
+LOCAL.md
+
 # IDE
 .idea/
 .vscode/
