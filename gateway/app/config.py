@@ -1,15 +1,27 @@
-"""Gateway configuration loaded from environment variables."""
+"""Gateway configuration loaded from environment variables.
+
+If DEMO_PRIVATE_KEY or DEMO_MNEMONIC is set, role-specific keys are
+auto-derived before reading settings (see demo_keys module).
+"""
 
 import os
+
+# Inject demo-derived keys before reading config
+from gateway.app.demo_keys import inject_demo_env
+
+inject_demo_env()
 
 
 class Settings:
     seller_upstream_url: str = os.getenv("SELLER_UPSTREAM_URL", "http://localhost:8001")
     seller_address: str = os.getenv("SELLER_ADDRESS", "")
     buyer_address: str = os.getenv("BUYER_ADDRESS", "")
-    # SKALE Europa Testnet (juicy-low-small-testnet) by default for demos.
-    chain_id: int = int(os.getenv("CHAIN_ID", "1444673419"))
-    chain_rpc_url: str = os.getenv("CHAIN_RPC_URL", "")
+    # SKALE Hackathon chain (BITE v2 Sandbox 2) by default for demos.
+    chain_id: int = int(os.getenv("CHAIN_ID", "103698795"))
+    chain_rpc_url: str = os.getenv(
+        "CHAIN_RPC_URL",
+        "https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox",
+    )
     settlement_contract: str = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
     payment_token: str = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
     gateway_private_key: str = os.getenv("GATEWAY_PRIVATE_KEY", "")

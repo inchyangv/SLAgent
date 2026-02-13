@@ -26,6 +26,10 @@ import sys
 import httpx
 
 from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation, NegotiationResult
+from gateway.app.demo_keys import inject_demo_env
+
+# Inject demo keys before anything reads env vars
+inject_demo_env()
 
 
 SCENARIOS = [

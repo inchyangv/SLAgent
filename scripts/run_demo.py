@@ -26,7 +26,11 @@ import time
 
 import httpx
 
+from gateway.app.demo_keys import inject_demo_env
 from gateway.app.x402 import create_payment_token, create_x402_payment
+
+# Inject demo keys before anything reads env vars
+inject_demo_env()
 
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
 SELLER_URL = os.getenv("SELLER_URL", "http://localhost:8001")
@@ -62,7 +66,10 @@ def make_payment_header(path: str = "/v1/call") -> dict[str, str]:
 
         # Default to SKALE hackathon chain (BITE v2 Sandbox 2) unless overridden.
         chain_id = int(os.getenv("CHAIN_ID", "103698795"))
-        asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "") or _default_address("0")
+        # Default to predeployed USDC on the hackathon chain if not provided.
+        asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "") or "0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"
+        token_name = os.getenv("SLA_TOKEN_NAME", "USDC")
+        token_version = os.getenv("SLA_TOKEN_VERSION", "")
 
         header_val = create_x402_payment(
             private_key=buyer_private_key,
@@ -71,6 +78,8 @@ def make_payment_header(path: str = "/v1/call") -> dict[str, str]:
             value=MAX_PRICE,
             asset=asset,
             chain_id=chain_id,
+            token_name=token_name,
+            token_version=token_version,
         )
         return {"X-PAYMENT": header_val}
 
