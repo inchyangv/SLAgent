@@ -27,7 +27,8 @@ contract DeploySlaPayV2 is Script {
         uint256 mintToGateway = vm.envOr("MINT_TO_GATEWAY", uint256(1_000_000_000)); // 1000 SLAT (6 decimals)
         bool approveMax = vm.envOr("APPROVE_MAX", true);
 
-        // Optional: use an existing token (ex: USDC on SKALE) instead of deploying SLAToken.
+        // Optional: use an existing token (ex: predeployed USDC on SKALE hackathon chain)
+        // instead of deploying SLAToken.
         address existingToken = _envAddressOr("TOKEN_ADDRESS", address(0));
 
         vm.startBroadcast(privateKey);

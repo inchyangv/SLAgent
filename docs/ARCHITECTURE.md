@@ -160,25 +160,21 @@ Buyer Agent          Gateway              Seller Agent         Settlement Contra
 
 ## Chain & Token Strategy (MVP)
 
-### Network: SKALE Europa (Testnet for demo)
+### Network: SKALE Hackathon (BITE v2 Sandbox 2)
 
-- **Chain ID:** 1444673419
-- **RPC:** `https://testnet.skalenodes.com/v1/juicy-low-small-testnet`
-- **Key property:** Zero gas fees — ideal for high-frequency micro-settlements
+- **Chain ID:** `103698795`
+- **RPC:** `https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox`
+- **Explorer:** `https://base-sepolia-testnet-explorer.skalenodes.com:10032`
+- **Note:** 배포 시 EVM 버전은 Istanbul 이하가 필요합니다(Foundry는 `contracts/foundry.toml`에서 고정).
 
-Alternative (mainnet):
-- **Chain ID:** 2046399126
-- **RPC:** `https://mainnet.skalenodes.com/v1/elated-tan-skat`
-- **Explorer:** `https://elated-tan-skat.explorer.mainnet.skalenodes.com`
+### Token: Predeployed USDC (Hackathon)
 
-### Token: ERC20 Mock (SLAToken)
+Hackathon chain에는 USDC가 미리 배포되어 있으며, 데모는 이를 사용한다.
 
-For the hackathon MVP, we deploy a simple ERC20 mock token:
-
-- **Name:** SLA Test Token
-- **Symbol:** SLAT
+- **Name/Symbol:** USDC / USDC
 - **Decimals:** 6
-- **Rationale:** 6 decimals matches USDC convention and keeps amounts human-readable
+- **Address (BITE v2 Sandbox 2):** `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
+- **Rationale:** “실제 토큰”을 써서 x402/정산 데모의 현실성을 올린다.
 
 ### Amount Unit Conventions
 
@@ -200,11 +196,15 @@ All amounts in the protocol are denominated in the **smallest token unit** (6 de
 
 ### Settlement Flow (On-chain)
 
-1. Buyer's `max_price` is transferred to the Settlement contract (via x402 payment).
-2. Gateway computes `payout` off-chain based on mandate rules + measured metrics.
-3. Gateway calls `settle()` with signed receipt.
-4. Contract transfers `payout` to seller, `max_price - payout` back to buyer.
-5. Receipt hash emitted via `Settled` event.
+1. Buyer(또는 facilitator)가 `deposit(requestId, buyer, max_price)`로 escrow에 예치한다.
+2. Gateway는 mandate rules + 측정 metrics로 `payout`을 결정적으로 계산한다.
+3. Gateway가 signed receipt로 `settle()`을 호출해 “이번 요청의 정산 조건”을 고정한다.
+4. dispute window가 지나면 `finalize()`로 payout/refund가 분배된다(또는 dispute가 열리면 resolver가 `resolveDispute()`).
+5. Receipt hash가 `Settled` 이벤트로 온체인에 남는다.
+
+노트:
+- HTTP 레벨의 x402(402→paid)은 “결제 증명/게이팅” 용도이고, 실제 자금 이동(escrow)은 `deposit()`으로 연결되어야 한다.
+- 현재 gateway가 `deposit → settle`을 자동으로 엮는 작업은 티켓으로 남겨두었다(`TICKET.md`의 `T-123`).
 
 ### Component Diagram
 
@@ -221,7 +221,7 @@ All amounts in the protocol are denominated in the **smallest token unit** (6 de
                                │
                     ┌──────────▼──────────┐
                     │  Settlement Contract │
-                    │  (SKALE Europa)      │
+                    │ (SKALE BITE v2)      │
                     │                     │
                     │  - split funds      │
                     │  - emit receipt hash│

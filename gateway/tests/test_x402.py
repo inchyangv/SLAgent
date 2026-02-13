@@ -117,7 +117,8 @@ def test_402_response_has_x402_format():
     assert "payTo" in accept
     assert "maxTimeoutSeconds" in accept
     assert "extra" in accept
-    assert accept["extra"]["name"] == "SLAToken"
+    # Default token domain for hackathon demo: USDC
+    assert accept["extra"]["name"] == "USDC"
 
 
 # ── x402 Mode Tests (EIP-712 signatures) ────────────────────────────────────
@@ -138,8 +139,9 @@ def test_x402_create_and_verify(monkeypatch):
     asset = "0x1234567890AbcdEF1234567890aBcdef12345678"
     chain_id = 1444673419
 
-    monkeypatch.setenv("SLA_TOKEN_NAME", "SLAToken")
-    monkeypatch.setenv("SLA_TOKEN_VERSION", "1")
+    # Ensure token domain is deterministic for the test.
+    monkeypatch.setenv("SLA_TOKEN_NAME", "USDC")
+    monkeypatch.setenv("SLA_TOKEN_VERSION", "")
 
     # Create the x402 payment
     payment_b64 = create_x402_payment(

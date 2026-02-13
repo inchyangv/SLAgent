@@ -773,7 +773,7 @@ Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment aut
 ---
 
 ## T-123 — Fix On-chain Funds Flow (Buyer Pays, Not Gateway)
-**Status:** DONE
+**Status:** TODO
 **Priority:** P0
 **Depends on:** T-010, T-050, T-122
 
@@ -788,17 +788,22 @@ Update the on-chain flow so **the buyer is the payer** (or the contract has escr
   - C) x402 payment transfers `max_price` directly to escrow, and `settle()` checks escrow balance
 - Update contract + gateway integration + tests accordingly
 - Ensure replay protection holds across deposit/settle
+- **필수 연결(현재 갭):**
+  - gateway가 `request_id`를 생성한 뒤 `submit_deposit()`을 먼저 호출하고, 성공 시에만 `submit_settlement()`을 호출
+  - deposit의 payer는 데모에서는 gateway EOA로 시작해도 되지만, 최종적으로는 buyer가 payer가 되도록 전환(permit/meta-tx 등)
 
 ### Acceptance Criteria
 - On-chain accounting shows buyer funds `max_price` (not gateway custody)
 - Settlement distributes payout/refund from escrowed buyer funds
 
 ### Completion Notes
-- SLASettlement.sol: deposit() + DEPOSITED→PENDING flow, buyer funds escrow
-- facilitator/settlement.py: submit_deposit() for on-chain deposit
-- gateway/app/settlement_client.py: ABI includes deposit()
-- Foundry tests cover deposit→settle→finalize and deposit→settle→dispute paths
-- Validate: `cd contracts && forge test -v`
+- (부분 완료) 컨트랙트/라이브러리 레벨:
+  - SLASettlement.sol: deposit() + DEPOSITED→PENDING flow
+  - facilitator/settlement.py: submit_deposit()
+  - gateway/app/settlement_client.py: ABI에 deposit 포함
+- (미완) gateway 엔드투엔드 플로우:
+  - 현재 `gateway/app/main.py`는 deposit 없이 settle을 호출하므로, 라이브 체인에서는 settle이 revert될 수 있음
+  - 위 갭을 메워야 “항상 tx_hash가 찍히는” 데모가 가능
 
 ---
 

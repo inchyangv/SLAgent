@@ -24,8 +24,8 @@ based on measured QoS (latency, validity) — settled on-chain with cryptographi
 | Gateway | Python, FastAPI |
 | Pricing Engine | Integer arithmetic, latency tiers |
 | Validation | JSON Schema (deterministic) |
-| Chain | SKALE Europa Hub (zero gas) |
-| Token | ERC20 mock (6 decimals, USDC-style) |
+| Chain | SKALE Hackathon: BITE v2 Sandbox 2 (Chain ID 103698795) |
+| Token | Predeployed USDC (6 decimals) |
 | Dashboard | Static HTML + vanilla JS |
 
 ## Repository Overview
@@ -33,7 +33,7 @@ based on measured QoS (latency, validity) — settled on-chain with cryptographi
 ```
 contracts/        Solidity settlement + dispute (Foundry)
   src/SLASettlement.sol    Main contract: escrow, split, dispute
-  src/SLAToken.sol         Mock ERC20 for demo
+  src/SLAToken.sol         (Optional) mock ERC20 for local-only testing
   test/                    18 Foundry tests
 
 gateway/          FastAPI reverse proxy

@@ -34,9 +34,16 @@ logger = logging.getLogger("sla-gateway.x402")
 PAYMENT_MODE = os.getenv("PAYMENT_MODE", "hmac")  # "hmac" or "x402"
 PAYMENT_SECRET = "sla-pay-v2-demo-secret"  # HMAC mode only
 
-# EIP-712 domain for SLAToken TransferAuthorization
-SLA_TOKEN_NAME = os.getenv("SLA_TOKEN_NAME", "SLAToken")
-SLA_TOKEN_VERSION = os.getenv("SLA_TOKEN_VERSION", "1")
+def _token_domain() -> tuple[str, str]:
+    """Return (name, version) for the EIP-712 domain.
+
+    Note: For the predeployed USDC on SKALE BITE v2 Sandbox 2:
+    - name() == "USDC"
+    - version() == "" (empty string)
+    """
+    name = os.getenv("SLA_TOKEN_NAME", "USDC")
+    version = os.getenv("SLA_TOKEN_VERSION", "")
+    return name, version
 
 # Track used nonces for replay protection (in-memory for MVP)
 _used_nonces: set[str] = set()
@@ -54,6 +61,7 @@ def create_402_response(
     seller: str,
 ) -> JSONResponse:
     """Return a 402 Payment Required response with x402-compatible payment details."""
+    token_name, token_version = _token_domain()
     payment_details: dict[str, Any] = {
         "scheme": "exact",
         "network": f"eip155:{chain_id}",
@@ -64,8 +72,8 @@ def create_402_response(
         "asset": payment_token_address,
         "maxTimeoutSeconds": 300,
         "extra": {
-            "name": SLA_TOKEN_NAME,
-            "version": SLA_TOKEN_VERSION,
+            "name": token_name,
+            "version": token_version,
             "protocol": "sla-pay-v2",
         },
     }
@@ -165,13 +173,18 @@ def create_x402_payment(
     value: str,
     asset: str,
     chain_id: int,
-    token_name: str = "SLAToken",
-    token_version: str = "1",
+    token_name: str | None = None,
+    token_version: str | None = None,
 ) -> str:
     """Create an x402 payment header value (Base64-encoded JSON).
 
     Signs a TransferWithAuthorization message using EIP-712.
     """
+    if token_name is None or token_version is None:
+        default_name, default_version = _token_domain()
+        token_name = default_name if token_name is None else token_name
+        token_version = default_version if token_version is None else token_version
+
     nonce = os.urandom(32)
     nonce_hex = "0x" + nonce.hex()
     now = int(time.time())
@@ -277,10 +290,11 @@ def _verify_x402(request: Request, *, max_price: str, chain_id: int, asset: str)
     # Recover signer from EIP-712 signature
     try:
         nonce_bytes = bytes.fromhex(nonce_hex.removeprefix("0x"))
+        token_name, token_version = _token_domain()
 
         domain_data = {
-            "name": SLA_TOKEN_NAME,
-            "version": SLA_TOKEN_VERSION,
+            "name": token_name,
+            "version": token_version,
             "chainId": chain_id,
             "verifyingContract": asset,
         }

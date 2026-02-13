@@ -150,8 +150,8 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     print(f"    latency_ms:       {metrics.get('latency_ms', '-')}")
     print(f"    ttft_ms:          {metrics.get('ttft_ms', '-')}")
     print(f"    validation_passed: {validation_passed}")
-    print(f"    payout:           {payout} ({payout/1_000_000:.6f} SLAT)")
-    print(f"    refund:           {refund} ({refund/1_000_000:.6f} SLAT)")
+    print(f"    payout:           {payout} ({payout/1_000_000:.6f} USDC)")
+    print(f"    refund:           {refund} ({refund/1_000_000:.6f} USDC)")
     print(f"    receipt_hash:     {receipt_hash[:20]}...")
     print(f"    tx_hash:          {tx_hash or 'mock (no chain)'}")
 

@@ -33,8 +33,3 @@ contracts/broadcast/
 # OS
 .DS_Store
 Thumbs.db
-
-# Local demo notes (team-specific)
-DEMO.md
-LOCAL.md
-docs/DEMO.md
