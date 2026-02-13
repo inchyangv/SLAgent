@@ -114,31 +114,10 @@
     <label style="display:inline;margin:0">Seller:</label>
     <input id="seller-url" value="http://localhost:8001" style="width:240px">
     <button onclick="refreshAll()">Refresh All</button>
-    <button class="primary" id="run-demo-btn" onclick="runDemo()">Run Demo</button>
-</div>
-
-<!-- Simulator Controls (T-144) -->
-<div class="card" style="margin-bottom:12px;padding:10px 14px">
-    <div class="row" style="flex-wrap:wrap;gap:12px">
-        <div>
-            <label>Latency Delay: <strong id="delay-val">0</strong>ms</label>
-            <input type="range" id="delay-slider" min="0" max="8000" step="100" value="0"
-                   style="width:180px;vertical-align:middle"
-                   oninput="document.getElementById('delay-val').textContent=this.value">
-        </div>
-        <div>
-            <label>Failure Toggles:</label>
-            <label style="display:inline;font-size:0.78rem"><input type="checkbox" id="toggle-schema-fail"> Schema Invalid</label>
-            <label style="display:inline;font-size:0.78rem;margin-left:8px"><input type="checkbox" id="toggle-upstream-error"> Upstream 5xx</label>
-            <label style="display:inline;font-size:0.78rem;margin-left:8px"><input type="checkbox" id="toggle-timeout"> Timeout</label>
-        </div>
-        <div>
-            <label>Quick Presets:</label>
-            <button style="font-size:0.72rem" onclick="setSimPreset('happy')">Happy Path</button>
-            <button style="font-size:0.72rem" onclick="setSimPreset('slow')">Slow SLA</button>
-            <button style="font-size:0.72rem" onclick="setSimPreset('breach')">All Breaches</button>
-        </div>
-    </div>
+    <button id="preset-btn-happy" onclick="setSimPreset('happy')">Happy Path</button>
+    <button id="preset-btn-slow" onclick="setSimPreset('slow')">Slow SLA</button>
+    <button id="preset-btn-breaches" onclick="setSimPreset('breaches')">Breaches</button>
+    <span id="preset-state" class="badge badge-info">Preset: HAPPY PATH</span>
 </div>
 
 <!-- Autonomous SLA Evaluator -->
@@ -152,7 +131,7 @@
         <span style="font-size:0.72rem;color:#888">You change only SLA inputs; agent runs call, payment, and settlement.</span>
     </div>
     <div class="eval-grid">
-        <div class="eval-card"><div class="eval-label">Inferred Mode</div><div id="eval-mode" class="eval-value">-</div></div>
+        <div class="eval-card"><div class="eval-label">Preset / Mode</div><div id="eval-mode" class="eval-value">-</div></div>
         <div class="eval-card"><div class="eval-label">Last Request</div><div id="eval-request" class="eval-value">-</div></div>
         <div class="eval-card"><div class="eval-label">SLA Status</div><div id="eval-sla" class="eval-value">-</div></div>
         <div class="eval-card"><div class="eval-label">Payout</div><div id="eval-payout" class="eval-value">-</div></div>
@@ -379,63 +358,75 @@
         }
     }
 
-    // ── Simulator Presets (T-144) ──
+    // ── Simulator Presets (preset-only, no manual toggles) ──
+    const SIM_PRESETS = {
+        happy: {
+            label: 'Happy Path',
+            autopilot_mode: 'fast',
+            delay_ms: 0,
+            simulator: {force_schema_fail: false, force_upstream_error: false, force_timeout: false},
+        },
+        slow: {
+            label: 'Slow SLA',
+            autopilot_mode: 'slow',
+            delay_ms: 4000,
+            simulator: {force_schema_fail: false, force_upstream_error: false, force_timeout: false},
+        },
+        breaches: {
+            label: 'Breaches',
+            autopilot_mode: 'invalid',
+            delay_ms: 0,
+            simulator: {force_schema_fail: true, force_upstream_error: true, force_timeout: false},
+        },
+    };
+    let currentPreset = 'happy';
+
+    function renderPresetState() {
+        const cfg = SIM_PRESETS[currentPreset];
+        const state = document.getElementById('preset-state');
+        const buttonMap = {
+            happy: document.getElementById('preset-btn-happy'),
+            slow: document.getElementById('preset-btn-slow'),
+            breaches: document.getElementById('preset-btn-breaches'),
+        };
+        Object.entries(buttonMap).forEach(([k, btn]) => {
+            if (!btn) return;
+            if (k === currentPreset) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+        if (currentPreset === 'happy') state.className = 'badge badge-pass';
+        else if (currentPreset === 'slow') state.className = 'badge badge-partial';
+        else state.className = 'badge badge-fail';
+        state.textContent = `Preset: ${cfg.label.toUpperCase()}`;
+    }
+
     function setSimPreset(preset) {
-        const slider = document.getElementById('delay-slider');
-        const schemaFail = document.getElementById('toggle-schema-fail');
-        const upstreamErr = document.getElementById('toggle-upstream-error');
-        const timeout = document.getElementById('toggle-timeout');
-        schemaFail.checked = false; upstreamErr.checked = false; timeout.checked = false;
-        if (preset === 'happy') {
-            slider.value = 0;
-        } else if (preset === 'slow') {
-            slider.value = 4000;
-        } else if (preset === 'breach') {
-            slider.value = 6000;
-            schemaFail.checked = true;
-            upstreamErr.checked = true;
-        }
-        document.getElementById('delay-val').textContent = slider.value;
-        addLog(`Simulator preset: ${preset} (delay=${slider.value}ms)`, 'info');
+        if (!SIM_PRESETS[preset]) return;
+        currentPreset = preset;
+        renderPresetState();
+        const cfg = SIM_PRESETS[currentPreset];
+        addLog(`Preset selected: ${cfg.label} (mode=${cfg.autopilot_mode}, delay=${cfg.delay_ms}ms)`, 'info');
     }
 
     function getSimSettings() {
+        const cfg = SIM_PRESETS[currentPreset];
         return {
-            delay_ms: parseInt(document.getElementById('delay-slider').value) || 0,
-            force_schema_fail: document.getElementById('toggle-schema-fail').checked,
-            force_upstream_error: document.getElementById('toggle-upstream-error').checked,
-            force_timeout: document.getElementById('toggle-timeout').checked,
+            preset: currentPreset,
+            preset_label: cfg.label,
+            delay_ms: cfg.delay_ms,
+            force_schema_fail: cfg.simulator.force_schema_fail,
+            force_upstream_error: cfg.simulator.force_upstream_error,
+            force_timeout: cfg.simulator.force_timeout,
         };
     }
 
-    function buildModesFromSim() {
-        const sim = getSimSettings();
-        const modes = [];
-        // Always include a "normal" scenario (with delay applied)
-        modes.push('fast');
-        if (sim.force_schema_fail) modes.push('invalid');
-        if (sim.force_upstream_error) modes.push('error');
-        if (sim.force_timeout) modes.push('timeout');
-        // If no failures selected, add slow variant
-        if (!sim.force_schema_fail && !sim.force_upstream_error && !sim.force_timeout) {
-            modes.push('slow');
-            modes.push('invalid');
-        }
-        return modes;
-    }
-
-    function inferAutonomousMode(sim) {
-        if (sim.force_timeout) return 'timeout';
-        if (sim.force_upstream_error) return 'error';
-        if (sim.force_schema_fail) return 'invalid';
-        if ((sim.delay_ms || 0) >= 3000) return 'slow';
-        return 'fast';
+    function getAutopilotMode() {
+        return SIM_PRESETS[currentPreset].autopilot_mode;
     }
 
     function setAutopilotVisual(active) {
         const btn = document.getElementById('autopilot-btn');
         const state = document.getElementById('autopilot-state');
-        const demoBtn = document.getElementById('run-demo-btn');
         const intervalInput = document.getElementById('autopilot-interval');
         if (active) {
             btn.textContent = 'Stop Autopilot';
@@ -443,7 +434,6 @@
             btn.classList.add('danger');
             state.className = 'badge badge-pass';
             state.textContent = 'RUNNING';
-            demoBtn.disabled = true;
             intervalInput.disabled = true;
         } else {
             btn.textContent = 'Start Autopilot';
@@ -451,7 +441,6 @@
             btn.classList.add('primary');
             state.className = 'badge badge-zero';
             state.textContent = 'STOPPED';
-            demoBtn.disabled = false;
             intervalInput.disabled = false;
         }
     }
@@ -478,8 +467,9 @@
             ? `${(Number(llm.confidence) * 100).toFixed(1)}%`
             : '-';
         const llmReason = llm?.reason ? String(llm.reason) : '-';
+        const presetLabel = SIM_PRESETS[currentPreset]?.label || '-';
 
-        document.getElementById('eval-mode').textContent = mode || '-';
+        document.getElementById('eval-mode').textContent = `${presetLabel} / ${mode || '-'}`;
         document.getElementById('eval-request').textContent = result?.request_id || '-';
         document.getElementById('eval-sla').innerHTML = `<span class="badge ${slaClass}">${slaText}</span>`;
         document.getElementById('eval-payout').textContent = `${(payout / 1e6).toFixed(4)} USDC`;
@@ -496,8 +486,8 @@
         if (autopilotBusy) return;
         autopilotBusy = true;
         const sim = getSimSettings();
-        const mode = inferAutonomousMode(sim);
-        document.getElementById('eval-mode').textContent = mode;
+        const mode = getAutopilotMode();
+        document.getElementById('eval-mode').textContent = `${sim.preset_label} / ${mode}`;
 
         try {
             const resp = await fetch(`${gw()}/v1/demo/run`, {
@@ -524,7 +514,7 @@
                 ? ` llm=${llm.sla_pass ? 'pass' : 'fail'} conf=${Number.isFinite(Number(llm.confidence)) ? Number(llm.confidence).toFixed(2) : '-'}`
                 : ' llm=off';
             addLog(
-                `Autopilot: mode=${mode} req=${result.request_id || '-'} payout=${result.payout || '0'} refund=${result.refund || '0'}${llmTag}`,
+                `Autopilot[${sim.preset_label}]: mode=${mode} req=${result.request_id || '-'} payout=${result.payout || '0'} refund=${result.refund || '0'}${llmTag}`,
                 result.ok ? 'ok' : 'err',
             );
             await fetchReceipts({silent: true});
@@ -893,48 +883,6 @@
         ]);
     }
 
-    // ── Demo Run API ──
-    async function runDemo() {
-        if (autopilotTimer) {
-            addLog('Stop Autopilot before running batch demo', 'err');
-            return;
-        }
-        const btn = document.getElementById('run-demo-btn');
-        btn.disabled = true;
-        btn.textContent = 'Running...';
-        const sim = getSimSettings();
-        const modes = buildModesFromSim();
-        addLog(`Starting demo run — delay=${sim.delay_ms}ms modes=[${modes.join(',')}]`);
-        try {
-            const resp = await fetch(`${gw()}/v1/demo/run`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({modes, seller_url: sl(), delay_ms: sim.delay_ms, simulator: sim}),
-            });
-            if (!resp.ok) {
-                const err = await resp.json();
-                addLog(`Demo run failed: ${err.detail || resp.statusText}`, 'err');
-                return;
-            }
-            const data = await resp.json();
-            const s = data.summary || {};
-            addLog(`Demo complete: ${s.success}/${s.total} passed`, s.failed > 0 ? 'err' : 'ok');
-            for (const step of data.steps || []) {
-                addLog(`  ${step.step}: ${step.ok ? 'OK' : 'FAIL'} ${step.error || step.request_id || ''}`, step.ok ? 'ok' : 'err');
-            }
-            // Refresh receipts to show new data
-            await fetchReceipts();
-            await fetchMandates();
-            await fetchBalances({silent: false});
-            await fetchNegotiationTrace({silent: true});
-        } catch (e) {
-            addLog(`Demo error: ${e.message}`, 'err');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Run Demo';
-        }
-    }
-
     // ── Event Timeline ──
     const VIOLATION_KINDS = ['validation.schema_fail', 'execution.upstream_error', 'pricing'];
     const KIND_COLORS = {
@@ -1057,6 +1005,7 @@
     }
 
     // Auto-fetch on load + live polling
+    renderPresetState();
     refreshAll();
     setAutopilotVisual(false);
     setLiveEventsVisual(liveEventsEnabled);
