@@ -229,7 +229,7 @@ class AutonomousBuyerLoop:
                     scenario_tag="autonomous",
                     seller_url=chosen_seller.target.seller_url,
                 )
-                status = "success"
+                status = "success" if result.success and not result.error else "error"
             except InvariantViolation as exc:
                 result = exc.result or self._error_result(
                     mode=chosen_seller.target.mode,

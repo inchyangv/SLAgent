@@ -60,12 +60,17 @@ def log(step: str, msg: str) -> None:
     print(f"  [{step}] {msg}")
 
 
-def wait_for_health(url: str, name: str, timeout: int = 15) -> bool:
+def wait_for_health(
+    url: str,
+    name: str,
+    timeout: int = 15,
+    request_timeout: float = 3.0,
+) -> bool:
     """Wait for a service to become healthy."""
     start = time.time()
     while time.time() - start < timeout:
         try:
-            resp = httpx.get(f"{url}", timeout=3.0)
+            resp = httpx.get(f"{url}", timeout=request_timeout)
             if resp.status_code == 200:
                 return True
         except (httpx.ConnectError, httpx.ReadTimeout):
@@ -168,7 +173,11 @@ def main() -> int:
             )
             processes.append(wdk_proc)
 
-            if not wait_for_health(f"{WDK_URL}/health", "wdk-service"):
+            if not wait_for_health(
+                f"{WDK_URL}/health",
+                "wdk-service",
+                request_timeout=6.0,
+            ):
                 log("FAIL", "WDK sidecar failed to start")
                 return 1
             log("START", "WDK sidecar is reachable")

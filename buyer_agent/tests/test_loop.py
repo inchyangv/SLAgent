@@ -217,3 +217,65 @@ def test_autonomous_loop_stops_when_budget_cannot_cover_next_round(monkeypatch):
 
     assert result.rounds == []
     assert result.stop_reason == "budget_exhausted"
+
+
+def test_autonomous_loop_marks_buyer_error_results_as_errors(monkeypatch):
+    class FakeBuyerAgent:
+        def __init__(
+            self,
+            gateway_url,
+            seller_url,
+            buyer_address,
+            buyer_private_key=None,
+            timeout=30.0,
+        ):
+            self.seller_url = seller_url
+            self.max_price = "100000"
+
+        async def discover_seller(self):
+            return {
+                "seller_address": "seller-one",
+                "supported_schemas": ["invoice_v1"],
+                "llm_model": "fake",
+            }
+
+        async def negotiate_mandate(self, seller_capabilities=None, scenario_tag=""):
+            return NegotiationResult(
+                seller_capabilities=seller_capabilities or {},
+                mandate={**MANDATE, "seller": "seller-one"},
+                mandate_id="0xseller-one",
+                seller_accepted=True,
+                summary="ok",
+            )
+
+        async def call(self, mode="fast", delay_ms=0, scenario_tag="", seller_url=None):
+            return BuyerResult(
+                request_id="",
+                mode=mode,
+                success=False,
+                metrics={},
+                validation_passed=False,
+                payout=0,
+                refund=0,
+                max_price=100000,
+                receipt_hash="",
+                tx_hash=None,
+                seller_response={},
+                invariant_checks=[],
+                error="Buyer deposit failed",
+            )
+
+    monkeypatch.setattr("buyer_agent.loop.BuyerAgent", FakeBuyerAgent)
+
+    loop = AutonomousBuyerLoop(
+        gateway_url="http://gateway",
+        seller_targets=[AutonomousSellerTarget("http://seller-one")],
+        buyer_address="0xbuyer",
+        budget_tokens=200000,
+        max_rounds=1,
+    )
+
+    result = asyncio.run(loop.run())
+
+    assert result.rounds[0].status == "error"
+    assert result.rounds[0].error == "Buyer deposit failed"
