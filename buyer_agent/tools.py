@@ -47,7 +47,7 @@ class BudgetConfig:
     @classmethod
     def default(cls) -> BudgetConfig:
         return cls(
-            budget_tokens=int(os.getenv("BUDGET_USDT", os.getenv("BUDGET_USDC", "200000"))),
+            budget_tokens=int(os.getenv("BUDGET_USDT", os.getenv("BUDGET_TOKENS", "200000"))),
             max_step_price=int(os.getenv("MAX_STEP_PRICE", "100000")),
         )
 

@@ -1,10 +1,32 @@
 # API — SLA Mandate & Receipt Schemas
 
-## Track Add-ons (Implemented)
+## Core Interfaces
 
-- **Agentic Tool Usage on x402**: 2+ paid tool calls per workflow (402 → pay → retry each), CDP Wallet signing/custody, budget-aware tool choice with spend logs.
-- **Best Integration of AP2**: explicit intent → authorization → settlement → receipt pattern over A2A/AP2 envelopes, including an authorization failure mode demo.
-- **Encrypted Agents (BITE v2)**: encrypted conditions/pricing/policy, decrypted and settled only on success; failure path keeps data sealed.
+- `POST /v1/mandates`
+- `POST /v1/call`
+- `GET /v1/receipts`
+- `GET /v1/balances`
+- `POST /v1/disputes/open`
+- `POST /v1/disputes/resolve`
+
+Deposit-first request body additions:
+
+- `request_id`
+- `buyer`
+- `deposit_tx_hash`
+
+Gateway response highlights:
+
+- `receipt_hash`
+- `deposit_tx_hash`
+- `settle_tx_hash`
+- `payout`
+- `refund`
+
+## Optional Surfaces
+
+- `gateway/app/a2a/` exposes A2A/AP2 envelope endpoints for protocol demos.
+- `wdk-service/` exposes wallet create/import/balance/approve/deposit/sign routes.
 
 ---
 
@@ -168,38 +190,3 @@
   }
 }
 ```
-
-## 3. Hashing Rules
-
-### Canonical JSON Serialization
-
-1. **Sort keys alphabetically** at every nesting level.
-2. **No whitespace** (compact JSON: `separators=(',', ':')` in Python).
-3. **UTF-8 encoding**.
-4. **String amounts**: all token amounts are strings of decimal digits (no leading zeros except `"0"`).
-
-### Mandate ID Computation
-
-```
-mandate_id = keccak256(canonical_json(mandate_payload_without_signatures_and_id))
-```
-
-Fields excluded from hashing:
-- `mandate_id` (computed)
-- `seller_signature`
-- `buyer_signature`
-
-### Receipt Hash Computation
-
-```
-receipt_hash = keccak256(canonical_json(receipt_payload_without_hashes_and_signatures))
-```
-
-Fields excluded from hashing:
-- `hashes` (contains the computed hash)
-- `signatures`
-
-## 4. Test Vectors
-
-See `gateway/app/hashing.py` and `gateway/tests/test_hashing.py` for reference
-implementation and test vectors.

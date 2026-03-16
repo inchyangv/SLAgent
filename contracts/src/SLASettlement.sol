@@ -115,8 +115,7 @@ contract SLASettlement {
     }
 
     /// @dev Minimal ERC-191 "eth_sign" prefix for bytes32 hashes.
-    ///      Avoids OpenZeppelin MessageHashUtils -> Strings -> Bytes (mcopy) dependency,
-    ///      so the contract can compile for Istanbul-class EVMs (ex: SKALE hackathon chain).
+    ///      Keeps the dependency surface small for testnet demos and reproducible builds.
     function _toEthSignedMessageHash(bytes32 messageHash) internal pure returns (bytes32 digest) {
         assembly ("memory-safe") {
             mstore(0x00, "\x19Ethereum Signed Message:\n32")

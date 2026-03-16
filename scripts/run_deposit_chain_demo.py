@@ -122,7 +122,7 @@ def main() -> None:
     parser.add_argument(
         "--budget",
         type=int,
-        default=int(os.getenv("BUDGET_USDT", os.getenv("BUDGET_USDC", "200000"))),
+        default=int(os.getenv("BUDGET_USDT", os.getenv("BUDGET_TOKENS", "200000"))),
         help="Total budget in smallest token unit",
     )
     parser.add_argument(

@@ -1,132 +1,95 @@
 # Submission — SLAgent-402
 
-## What is SLAgent-402?
+## What It Is
 
-**Pay by proof, not upfront.**
-
-SLAgent-402 is a pay-by-performance settlement layer for agent-to-agent API calls.
-Instead of fixed pricing, buyers pay `max_price` upfront and receive automatic refunds
-based on measured QoS (latency, validity) — settled on-chain with cryptographic receipts.
+SLAgent-402 is a pay-by-performance trust layer for agent-to-agent services.
+The buyer agent uses a WDK wallet sidecar to deposit Sepolia mock USDT into escrow
+before execution, and the gateway settles payout/refund only after measured SLA outcomes.
 
 ## Key Innovation
 
-- **Performance-based pricing:** Sellers earn more for faster, valid responses
-- **Deterministic validation:** JSON schema checks, not subjective LLM scoring
-- **On-chain receipts:** Every settlement emits a verifiable receipt hash
-- **Bonded disputes:** Challenge results with skin-in-the-game (bond slashing)
-- **x402 compatible:** Standard HTTP payment gating for agent commerce
+- **Deposit-first settlement:** payment proof is an on-chain escrow deposit, not an HTTP challenge
+- **WDK-native wallet flow:** buyer and gateway can use the sidecar for wallet actions and signatures
+- **Deterministic adjudication:** schema validation and integer pricing rules stay reproducible
+- **Receipt-backed settlement:** every call returns receipt hashes plus deposit/settlement tx hashes
+- **Budgeted tool usage:** the buyer can run 2+ paid tool calls with per-step spend tracking
 
-## Tech Stack
+## Stack
 
 | Component | Technology |
-|-----------|-----------|
-| Settlement Contract | Solidity 0.8.24, Foundry |
+|-----------|------------|
+| Settlement contract | Solidity 0.8.24, Foundry |
+| Wallet layer | WDK + WDK EVM wallet + local Node.js sidecar |
 | Gateway | Python, FastAPI |
-| Pricing Engine | Integer arithmetic, latency tiers |
-| Validation | JSON Schema (deterministic) |
-| Chain | SKALE Base Sepolia (BITE v2 Sandbox 2) (Chain ID 103698795) |
-| Token | USDC (6 decimals) |
+| Seller | Python, Gemini/fallback execution |
+| Chain | Ethereum Sepolia |
+| Token | Mock USDT (6 decimals) |
 | Dashboard | Static HTML + vanilla JS |
 
 ## Repository Overview
 
-```
-contracts/        Solidity settlement + dispute (Foundry)
-  src/SLASettlement.sol    Main contract: escrow, split, dispute
-  src/SLAToken.sol         (Optional) mock ERC20 for local-only testing
-  test/                    18 Foundry tests
-
-gateway/          FastAPI reverse proxy
-  app/main.py              Endpoints: /v1/call, receipts, disputes
-  app/pricing.py           Latency tier pricing engine
-  app/validators/          JSON schema validator
-  app/x402.py              402 Payment Required flow
-  app/settlement_client.py Chain settlement bridge
-  demo_seller/             Demo seller with fast/slow/invalid modes
-  tests/                   42+ pytest tests
-
-facilitator/      Settlement transaction coordinator
-dashboard/        Static receipt ledger + metrics UI
-scripts/          Demo script + dispute resolver CLI
-docs/             Architecture, API, Security, Demo
+```text
+contracts/        SLASettlement + mock USDT
+gateway/          deposit verification, pricing, receipts, disputes
+seller/           seller execution service
+buyer_agent/      buyer CLI + deposit-first tool chain
+wdk-service/      local WDK bridge for wallet actions
+dashboard/        demo console
+scripts/          orchestration and demos
+docs/             architecture, API, security notes
 ```
 
-## How to Run the Demo
+## Demo Path
 
-### Prerequisites
-- Python 3.11+
-- Foundry (for contract tests)
+1. Load WDK wallet from mnemonic or seed phrase.
+2. Approve and deposit `max_price` into escrow.
+3. Call gateway with `request_id` and `deposit_tx_hash`.
+4. Gateway verifies deposit on-chain.
+5. Gateway forwards work, validates output, computes payout/refund.
+6. Gateway submits `settle()` and returns receipt + tx hashes.
 
-### Quick Start (< 5 minutes)
+## What Judges See
+
+- WDK wallet creation/import and balance visibility
+- Buyer-funded USDT escrow deposit
+- Three SLA scenarios with different payouts
+- On-chain deposit verification and settlement evidence
+- Receipt hashes and dispute-ready settlement lifecycle
+
+## Track Relevance
+
+### Autonomous DeFi Agent
+
+- The buyer agent controls a real wallet flow through WDK.
+- Capital is committed before work through escrow deposit.
+- Spending decisions and tool chaining are autonomous and budget-aware.
+- Settlement is on-chain and conditioned on delivered quality.
+
+### Optional Protocol Surface
+
+- A2A/AP2 envelope endpoints remain available for protocol-facing demos.
+- Gemini negotiation/policy traces show the system can mix LLM guidance with deterministic settlement.
+
+## How To Run
 
 ```bash
-# 1. Install
-python3 -m venv .venv
+cp .env.example .env
+cd wdk-service && npm install && cd ..
 source .venv/bin/activate
-pip install -e ".[dev]"
-
-# 2. Run contract tests
-cd contracts && forge test -v && cd ..
-
-# 3. Run Python tests
-pytest gateway/tests/ facilitator/tests/ -v
-
-# 4. Start demo seller
-uvicorn gateway.demo_seller.main:app --port 8001 &
-
-# 5. Start gateway
-uvicorn gateway.app.main:app --port 8000 &
-
-# 6. Run end-to-end demo
-python scripts/run_demo.py
-
-# 7. Open dashboard
-open dashboard/index.html
+python scripts/demo_one_command.py
 ```
 
-### What You'll See
+Optional:
 
-Three scenarios demonstrating pay-by-performance:
+```bash
+python scripts/run_deposit_chain_demo.py
+```
 
-1. **Fast + Valid** → Full payout ($0.10) — latency under 2s
-2. **Slow + Valid** → Base pay ($0.06) — latency over 5s
-3. **Invalid Output** → Zero payout, full refund ($0.10) — schema validation fails
+## Addresses
 
-## Hackathon Track Relevance
+Deployment addresses are environment-driven:
 
-### SKALE Base Sepolia (BITE v2 Sandbox 2)
-- Reproduces the full on-chain settlement flow on SKALE testnet
-- Low gas overhead makes per-request settlement demos practical
-- Escrow + delayed finalization improves dispute safety
+- `PAYMENT_TOKEN_ADDRESS`
+- `SETTLEMENT_CONTRACT_ADDRESS`
 
-### Coinbase x402
-- x402-compatible payment gating (402 → paid request flow)
-- `exact(max_price)` + refund pattern for "pay up to" behavior
-- Standard HTTP headers for agent-to-agent commerce
-
-### Agent Commerce (A2A/AP2)
-- SLA mandates as structured contracts between buyer and seller agents
-- Performance receipts as verifiable proofs of service delivery
-- Deterministic validators for objective quality assessment
-
-## Track Add-ons (Implemented)
-
-- **Agentic Tool Usage on x402**: 2+ paid tool calls per workflow (402 → pay → retry each), CDP Wallet signing/custody, budget-aware tool choice with spend logs.
-- **Best Integration of AP2**: explicit intent → authorization → settlement → receipt pattern over A2A/AP2 envelopes, including an authorization failure mode demo.
-- **Encrypted Agents (BITE v2)**: encrypted conditions/pricing/policy, decrypted and settled only on success; failure path keeps data sealed.
-
-## Contract Addresses
-
-SKALE BITE v2 Sandbox 2 deployment:
-- `SLASettlement`: `0xd5FBcF82364865E2477Aae988A3C3232Fae77756`
-- `USDC`: `0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8`
-- Deploy tx: `0xaba602d851e3cd18f43bc765a80f266322b0f856e052a0c4b9b1fccc864607bf`
-
-## Screenshots
-
-[Dashboard showing receipt ledger with three demo scenarios]
-[Terminal output from run_demo.py showing payout/refund per scenario]
-
-## Team
-
-Built during the hackathon — agent-to-agent commerce, settled by proof.
+This keeps the repo reusable across repeated Sepolia deployments during the hackathon.

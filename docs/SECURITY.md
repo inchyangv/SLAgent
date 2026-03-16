@@ -2,116 +2,92 @@
 
 ## Overview
 
-This document describes the security model, trust assumptions, and known limitations
-of SLAgent-402 as implemented for the hackathon MVP.
+This document captures the MVP trust model for the current WDK + deposit-first design.
 
 ## Trust Model
 
-### Gateway is Trusted (MVP)
+### Gateway Is Trusted
 
-In the current design, the **gateway is the single attestation authority**:
-- It measures TTFT/latency
-- It runs validators
-- It signs the performance receipt
-- It submits the settlement transaction
+The gateway is still the measurement and receipt authority:
 
-**Implication:** A compromised gateway can produce false receipts and steal funds.
+- measures latency
+- runs deterministic validators
+- computes payout/refund
+- signs settlement authorization
+- submits settlement/dispute transactions
 
-**Mitigation (future):** Multi-attestation (buyer + seller + gateway co-sign receipts),
-allowing any party to detect and dispute fraudulent attestations.
+Implication: a compromised gateway can lie about performance.
+
+Planned mitigation:
+- multi-party receipt signatures
+- independently reproducible metrics capture
 
 ### Buyer Trust
 
-- Buyer pays `exact(max_price)` upfront (locked in escrow)
-- Buyer's maximum loss is bounded by `max_price`
-- Buyer receives automatic refund for underperformance via pricing engine
-- Buyer can open disputes within the dispute window
+- Buyer loss is capped by `max_price`.
+- Buyer deposit is visible on-chain before work begins.
+- Buyer receives automatic refund according to deterministic pricing rules.
+- Buyer can open a bonded dispute within the dispute window.
 
 ### Seller Trust
 
-- Seller receives at least `base_pay` for valid, successful work
-- Seller cannot claim more than `max_price`
-- Seller funds are escrowed until dispute window expires
-- Seller can be disputed, but frivolous disputes are deterred by bonds
+- Seller cannot receive more than `max_price`.
+- Seller payout is gated by escrowed funds and settlement state.
+- Frivolous disputes cost a bond.
 
-## Replay Protection
+## What Improved in the Deposit-First Migration
 
-### On-chain
-- Each `requestId` can only be settled once
-- `settlements[requestId].status != NONE` check prevents replay
-- Contract stores settlement state permanently
+### On-Chain Deposit Verification
 
-### Off-chain
-- Facilitator tracks submitted `requestId`s in an idempotency set
-- Duplicate submissions are silently dropped
+The gateway now checks:
 
-## Dispute Mechanism
+- transaction hash format
+- transaction target equals settlement contract
+- decoded `deposit()` calldata matches `request_id` and buyer
+- `Deposited` event matches calldata
+- deposited amount covers the mandate `max_price`
 
-### Bond Requirement
-- Disputer must deposit `bondAmount` tokens to open a dispute
-- This deters griefing attacks (spam disputes to freeze seller funds)
+This is stronger than trusting an off-chain payment header.
 
-### Resolution
-- Resolver (trusted party in MVP) decides `finalPayout`
-- If payout changes → disputer was right → bond returned
-- If payout unchanged → disputer was wrong → bond slashed to resolver
+### Local WDK Signing Surface
 
-### Window
-- Disputes must be opened within `disputeWindow` seconds of settlement
-- After window, seller can call `finalize()` to withdraw
+The WDK sidecar exposes only wallet operations needed by the demo:
 
-## Known Limitations (MVP)
+- approve
+- deposit
+- balance
+- sign-message
+- sign-bytes
 
-### 1. Single Gateway Attestation
-The gateway is a single point of trust. A malicious gateway can:
-- Report false latency (e.g., claim slow when fast)
-- Forge validation results
-- Sign receipts for requests that never happened
+The sidecar is still part of the local operator trust boundary and should not be exposed publicly.
 
-**Future fix:** Multi-party attestation with cryptographic proofs.
+## Disputes
 
-### 2. Centralized Resolver
-The dispute resolver is a single trusted address. A colluding resolver can:
-- Always side with one party
-- Steal dispute bonds
+- Disputer posts `bondAmount`
+- Resolver chooses `finalPayout`
+- Correct dispute returns bond
+- Incorrect dispute slashes bond
 
-**Future fix:** Decentralized arbitration (Kleros-style) or deterministic re-validation.
+## Known MVP Limits
 
-### 3. HMAC Payment (Not Real x402)
-MVP uses HMAC-based payment tokens instead of real on-chain x402 proofs.
-This means payments are not cryptographically tied to on-chain state.
+1. Gateway remains a trusted coordinator.
+2. Resolver is centralized.
+3. Receipt/event storage is local unless persistent DB is configured.
+4. No production-grade rate limiting or auth.
+5. WDK sidecar is localhost-oriented infrastructure, not a hardened multi-tenant service.
 
-**Future fix:** Integrate with actual x402 payment verification.
+## Strong Invariants
 
-### 4. In-Memory State
-Receipts and dispute state are stored in-memory. Server restart loses data.
+1. `payout <= max_price` is enforced on-chain.
+2. Same `requestId` cannot be deposited/settled twice.
+3. Refund is `max_price - payout`.
+4. Deposit verification is tied to actual calldata and emitted event.
+5. Validation logic is deterministic and reproducible.
 
-**Future fix:** Persistent storage (SQLite, PostgreSQL, or IPFS for receipts).
+## Production Recommendations
 
-### 5. No Rate Limiting
-Gateway has no rate limiting, making it vulnerable to DoS.
-
-**Future fix:** Rate limiting per buyer address.
-
-### 6. Encrypted Conditional Settlement (BITE v2)
-Sensitive conditions/pricing/policy are encrypted and only decrypted when
-SLA and policy checks pass. Failed conditions keep data sealed and block
-settlement.
-
-## What Cannot Be Cheated (Even in MVP)
-
-1. **Payout invariant:** `payout <= max_price` is enforced on-chain
-2. **Replay protection:** Same requestId cannot be settled twice
-3. **Bond slashing:** Opening a frivolous dispute costs real tokens
-4. **Escrow safety:** Funds are locked until window expires or dispute resolves
-5. **Deterministic validation:** JSON schema validation is reproducible by any party
-
-## Recommendations for Production
-
-1. Implement multi-party receipt signing
-2. Add real x402 on-chain payment verification
-3. Decentralize the resolver role
-4. Add receipt storage with content-addressable hashing (IPFS)
-5. Implement rate limiting and access controls
-6. Conduct formal smart contract audit
-7. Expand encrypted policy coverage and formalize decryption attestations
+1. Add multi-party receipt signing.
+2. Decentralize the resolver role.
+3. Persist receipts and events in durable storage.
+4. Add authentication and rate limiting around gateway/sidecar services.
+5. Audit the contracts and wallet bridge before mainnet-like usage.
