@@ -49,8 +49,10 @@ demo_injected = inject_demo_env()
 
 GATEWAY_PORT = int(os.getenv("GATEWAY_PORT", "8000"))
 SELLER_PORT = int(os.getenv("SELLER_PORT", "8001"))
+WDK_PORT = int(os.getenv("WDK_PORT", "3100"))
 GATEWAY_URL = f"http://localhost:{GATEWAY_PORT}"
 SELLER_URL = f"http://localhost:{SELLER_PORT}"
+WDK_URL = os.getenv("WDK_SERVICE_URL", f"http://localhost:{WDK_PORT}")
 
 
 def log(step: str, msg: str) -> None:
@@ -92,6 +94,15 @@ def main() -> int:
     # Check if services are already running
     gateway_already_running = False
     seller_already_running = False
+    wdk_already_running = False
+
+    try:
+        resp = httpx.get(f"{WDK_URL}/health", timeout=2.0)
+        if resp.status_code == 200:
+            wdk_already_running = True
+            log("CHECK", f"WDK sidecar already running at {WDK_URL}")
+    except (httpx.ConnectError, httpx.ReadTimeout):
+        pass
 
     try:
         resp = httpx.get(f"{GATEWAY_URL}/v1/health", timeout=2.0)
@@ -112,7 +123,27 @@ def main() -> int:
     processes: list[subprocess.Popen] = []
 
     try:
-        # Step 1: Start seller
+        # Step 1: Start WDK sidecar
+        if not wdk_already_running:
+            log("START", f"Starting WDK sidecar on port {WDK_PORT}...")
+            wdk_proc = subprocess.Popen(
+                [
+                    "node",
+                    "src/server.mjs",
+                ],
+                cwd=os.path.join(_project_root, "wdk-service"),
+                env=os.environ.copy(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            processes.append(wdk_proc)
+
+            if not wait_for_health(f"{WDK_URL}/health", "wdk-service"):
+                log("FAIL", "WDK sidecar failed to start")
+                return 1
+            log("START", "WDK sidecar is reachable")
+
+        # Step 2: Start seller
         if not seller_already_running:
             log("START", f"Starting seller on port {SELLER_PORT}...")
             env = {**os.environ, "SELLER_FALLBACK": os.getenv("SELLER_FALLBACK", "true")}
@@ -135,7 +166,7 @@ def main() -> int:
                 return 1
             log("START", "Seller is healthy")
 
-        # Step 2: Start gateway
+        # Step 3: Start gateway
         if not gateway_already_running:
             log("START", f"Starting gateway on port {GATEWAY_PORT}...")
             env = {**os.environ, "SELLER_UPSTREAM_URL": SELLER_URL}
@@ -158,7 +189,7 @@ def main() -> int:
                 return 1
             log("START", "Gateway is healthy")
 
-        # Step 3: Run buyer agent
+        # Step 4: Run buyer agent
         print(f"\n{'='*64}")
         print("  RUNNING BUYER AGENT")
         print(f"{'='*64}")
@@ -211,7 +242,7 @@ def main() -> int:
         results = asyncio.run(run_demo())
         print_summary(results)
 
-        # Step 4: Final summary
+        # Step 5: Final summary
         print(f"{'='*64}")
         print("  DEMO COMPLETE")
         print(f"{'='*64}")

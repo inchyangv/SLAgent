@@ -105,9 +105,15 @@ app.get("/health", async (_req, res) => {
       loadedWallets: wallets.size,
     });
   } catch (error) {
-    res.status(503).json({
+    res.json({
       ok: false,
-      rpcUrl: RPC_URL,
+      chain: {
+        name: CHAIN_NAME,
+        chainId: null,
+        rpcUrl: RPC_URL,
+      },
+      block: null,
+      loadedWallets: wallets.size,
       error: error instanceof Error ? error.message : String(error),
     });
   }

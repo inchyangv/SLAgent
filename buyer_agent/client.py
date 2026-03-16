@@ -23,6 +23,7 @@ import httpx
 from eth_account import Account
 from web3 import Web3
 
+from buyer_agent.wdk_wallet import WDKWallet
 from gateway.app.hashing import compute_mandate_id
 from gateway.app.x402 import create_payment_token, create_x402_payment
 
@@ -107,6 +108,7 @@ class BuyerAgent:
         self._buyer_w3: Web3 | None = None
         self._buyer_account: Any | None = None
         self._last_nonce: int | None = None
+        self._wdk_wallet = WDKWallet.from_env(role="buyer", expected_address=buyer_address)
 
     async def discover_seller(self) -> dict[str, Any]:
         """Discover seller capabilities via GET /seller/capabilities."""
@@ -284,13 +286,32 @@ class BuyerAgent:
 
     def _submit_buyer_deposit(self, request_id: str, amount: int) -> str | None:
         """Submit buyer-funded deposit tx before the gateway call."""
+        settlement_addr = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
+        token_addr = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
+
+        if self._wdk_wallet and settlement_addr and token_addr:
+            try:
+                self._wdk_wallet.ensure_wallet_loaded()
+                self._wdk_wallet.approve(
+                    spender=settlement_addr,
+                    amount=amount,
+                    token_address=token_addr,
+                )
+                return self._wdk_wallet.deposit(
+                    request_id=request_id,
+                    amount=amount,
+                    settlement_contract=settlement_addr,
+                    buyer_address=self.buyer_address,
+                )
+            except Exception as exc:
+                logger.warning("WDK deposit path failed, falling back to local key signing: %s", exc)
+
         if not self._init_buyer_chain():
             return None
 
         assert self._buyer_w3 is not None
         assert self._buyer_account is not None
 
-        settlement_addr = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
         if not settlement_addr:
             return None
 
@@ -322,7 +343,7 @@ class BuyerAgent:
             "from": self._buyer_account.address,
             "nonce": self._next_buyer_nonce(),
             "gas": 220_000,
-            # Use legacy gas fields for SKALE compatibility.
+            # Legacy gasPrice keeps the local fallback simple on Sepolia.
             "gasPrice": self._buyer_w3.eth.gas_price,
         })
 
