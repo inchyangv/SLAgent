@@ -7,7 +7,6 @@ from typing import Any, Literal
 
 from gateway.app.pricing import compute_payout
 
-
 DisputeRole = Literal["buyer", "seller"]
 
 

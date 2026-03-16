@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from buyer_agent.dispute_policy import DisputePolicyConfig, assess_dispute
 
-
 MANDATE = {
     "max_price": "100000",
     "base_pay": "60000",
