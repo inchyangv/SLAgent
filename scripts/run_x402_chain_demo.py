@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""x402 Agentic Tool Chain Demo — multi-step paid workflow.
+"""Agentic Tool Chain Demo — multi-step paid workflow.
 
 Demonstrates:
 1. Tool catalog discovery
 2. CDP Wallet initialization
 3. Budget reasoning (deterministic)
-4. 2+ paid tool calls (each 402 → pay → retry)
+4. 2+ paid tool calls (single authorized request per step)
 5. Per-step spend tracking + final report
 
 Usage:
@@ -15,7 +15,7 @@ Usage:
     # With custom budget:
     python scripts/run_x402_chain_demo.py --budget 150000
 
-    # x402 mode (requires BUYER_PRIVATE_KEY):
+    # Legacy x402 header mode (requires BUYER_PRIVATE_KEY):
     PAYMENT_MODE=x402 python scripts/run_x402_chain_demo.py
 
 Prerequisites:
@@ -51,7 +51,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)-18s %(levelname)-5s %(message)s",
 )
-logger = logging.getLogger("x402-chain-demo")
+logger = logging.getLogger("tool-chain-demo")
 
 
 def _token_symbol() -> str:
@@ -112,7 +112,7 @@ async def run_demo(
     print()
 
     # ── Step 4: Execute tool chain ────────────────────────────────────────
-    _sep("STEP 4: Execute Tool Chain (402 → Pay → Outcome per step)")
+    _sep("STEP 4: Execute Tool Chain (Authorize → Outcome per step)")
     executor = ToolChainExecutor(
         gateway_url=gateway_url,
         seller_url=seller_url,
@@ -166,7 +166,7 @@ async def run_demo(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="x402 Agentic Tool Chain Demo")
+    parser = argparse.ArgumentParser(description="Agentic Tool Chain Demo")
     parser.add_argument("--gateway-url", default=os.getenv("GATEWAY_URL", "http://localhost:8000"))
     parser.add_argument("--seller-url", default=os.getenv("SELLER_URL", "http://localhost:8001"))
     parser.add_argument("--budget", type=int, default=int(os.getenv("BUDGET_USDC", "200000")),

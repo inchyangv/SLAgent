@@ -1,21 +1,26 @@
 """Tests for gateway core endpoints."""
 
+import gateway.app.main as gateway_main
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from gateway.app.main import app
 from gateway.app.mandates import mandate_store
 from gateway.app.receipt import receipt_store
 from gateway.app.x402 import create_payment_token
+
+app = gateway_main.app
 
 
 @pytest.fixture(autouse=True)
 def clear_stores(monkeypatch):
     monkeypatch.setenv("LLM_POLICY_ENABLED", "false")
     monkeypatch.setenv("LLM_NEGOTIATION_ENABLED", "false")
+    monkeypatch.setattr(gateway_main.settings, "chain_rpc_url", "")
+    monkeypatch.setattr(gateway_main.settings, "settlement_contract", "")
+    monkeypatch.setattr(gateway_main.settings, "buyer_address", "0x1111111111111111111111111111111111111111")
     receipt_store._cache.clear()
     mandate_store._mandates.clear()
     yield
@@ -70,9 +75,24 @@ def test_call_proxy_success():
     assert data["receipt_hash"].startswith("0x")
 
 
-def test_call_without_payment_returns_402():
-    resp = client.post("/v1/call", json={"payload": "test"})
-    assert resp.status_code == 402
+def test_call_without_payment_uses_mock_deposit_mode():
+    seller_response = {"invoice_id": "INV-0", "amount": 100, "currency": "USD",
+                       "line_items": [{"description": "x", "quantity": 1, "unit_price": 100}]}
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = seller_response
+        mock_response.content = json.dumps(seller_response).encode()
+        mock_response.status_code = 200
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post("/v1/call", json={"payload": "test"})
+
+    assert resp.status_code == 200
 
 
 def test_receipt_not_found():

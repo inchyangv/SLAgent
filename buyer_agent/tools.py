@@ -1,8 +1,8 @@
-"""x402 Agentic Tool Chain — multi-step paid tool execution with budget management.
+"""Agentic tool chain — multi-step paid tool execution with budget management.
 
-Implements a "discover → decide → pay → outcome" chain where each tool call
-goes through its own 402 challenge + paid retry, with deterministic budget
-reasoning and per-step spend tracking.
+Implements a "discover → decide → authorize → outcome" chain where each tool
+call is sent as a single paid request, with deterministic budget reasoning and
+per-step spend tracking.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from buyer_agent.cdp_wallet import CDPWallet
 from gateway.app.hashing import compute_mandate_id
 from gateway.app.x402 import create_payment_token
 
-logger = logging.getLogger("x402-tool-chain")
+logger = logging.getLogger("tool-chain")
 
 TOOL_CATALOG_PATH = Path(__file__).resolve().parent.parent / "data" / "tool_catalog.json"
 
@@ -75,7 +75,7 @@ class StepSpend:
     refund: int
     receipt_id: str
     receipt_hash: str
-    payment_hash: str  # x402 nonce or HMAC nonce
+    payment_hash: str  # payment header nonce or reference id
     tx_hash: str | None
     latency_ms: int
     validation_passed: bool
@@ -192,7 +192,7 @@ class BudgetManager:
 
 
 class ToolChainExecutor:
-    """Executes a multi-step paid tool chain with 402 challenge flow."""
+    """Executes a multi-step paid tool chain with single-request authorization."""
 
     def __init__(
         self,
@@ -316,7 +316,7 @@ class ToolChainExecutor:
         step_num: int,
         previous_output: dict[str, Any] | None = None,
     ) -> StepSpend:
-        """Execute a single paid tool call: 402 → pay → receive result.
+        """Execute a single paid tool call and record the resulting spend.
 
         Args:
             tool: Tool definition from catalog
@@ -365,43 +365,8 @@ class ToolChainExecutor:
             call_body["input_context"] = previous_output
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            # Step A: Unpaid request → expect 402
-            resp_402 = await client.post(
-                f"{self.gateway_url}/v1/call?mode={tool.mode}",
-                json=call_body,
-            )
-
-            if resp_402.status_code != 402:
-                logger.error("Step %d: Expected 402, got %d", step_num, resp_402.status_code)
-                return StepSpend(
-                    step=step_num,
-                    tool_id=tool.tool_id,
-                    tool_name=tool.name,
-                    price=price,
-                    payout=0,
-                    refund=0,
-                    receipt_id="",
-                    receipt_hash="",
-                    payment_hash="",
-                    tx_hash=None,
-                    latency_ms=0,
-                    validation_passed=False,
-                    cdp_wallet_id=self.cdp_wallet.wallet_id if self.cdp_wallet else "",
-                    cdp_custody_mode=self.cdp_wallet.mode if self.cdp_wallet else "",
-                    budget_before=budget_before,
-                    budget_after=budget_before,
-                    status="failed",
-                )
-
-            logger.info(
-                "Step %d (%s): 402 received — paying %s via CDP wallet",
-                step_num,
-                tool.tool_id,
-                tool.price,
-            )
-
-            # Step B: Pay via CDP wallet and retry
             headers, payment_nonce = self._make_payment_header(tool.price)
+            logger.info("Step %d (%s): submitting paid tool call for %s", step_num, tool.tool_id, tool.price)
             resp = await client.post(
                 f"{self.gateway_url}/v1/call?mode={tool.mode}",
                 json=call_body,

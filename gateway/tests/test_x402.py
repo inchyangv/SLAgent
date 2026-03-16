@@ -1,15 +1,14 @@
-"""Tests for x402 payment gating flow — both HMAC and x402 modes."""
+"""Tests for legacy x402 helpers and direct paid requests."""
 
+import gateway.app.main as gateway_main
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from gateway.app.main import app
 from gateway.app.x402 import create_payment_token, create_x402_payment, clear_nonce_cache
 
-
-client = TestClient(app)
+client = TestClient(gateway_main.app)
 
 
 def _make_payment_header(buyer: str = "0xBUYER", max_price: str = "100000") -> str:
@@ -24,23 +23,22 @@ def _make_payment_header(buyer: str = "0xBUYER", max_price: str = "100000") -> s
     })
 
 
-# ── HMAC Mode Tests ──────────────────────────────────────────────────────────
+# ── Legacy HMAC/X-PAYMENT compatibility ─────────────────────────────────────
 
 
-def test_unpaid_request_returns_402():
-    """Request without X-PAYMENT header returns 402."""
+def test_missing_deposit_without_legacy_header_returns_400(monkeypatch):
+    """Chain-configured requests require a deposit or a legacy payment header."""
+    monkeypatch.setattr(gateway_main.settings, "chain_rpc_url", "https://rpc.test")
+    monkeypatch.setattr(gateway_main.settings, "settlement_contract", "0x" + "9" * 40)
     resp = client.post("/v1/call", json={"payload": "test"})
-    assert resp.status_code == 402
+    assert resp.status_code == 400
     data = resp.json()
-    assert data["error"] == "Payment Required"
-    assert "accepts" in data
-    assert data["accepts"][0]["scheme"] == "exact"
-    assert data["accepts"][0]["maxAmountRequired"] == "100000"
-    assert data["x402Version"] == 1
+    assert data["error"] == "Deposit Required"
+    assert data["max_price"] == "100000"
 
 
 def test_paid_request_succeeds():
-    """Request with valid HMAC X-PAYMENT header proceeds."""
+    """Request with valid HMAC X-PAYMENT header still proceeds directly."""
     seller_response = {"invoice_id": "INV-1", "amount": 100, "currency": "USD",
                        "line_items": [{"description": "Test", "quantity": 1, "unit_price": 100}]}
 
@@ -70,8 +68,10 @@ def test_paid_request_succeeds():
     assert data["validation_passed"] is True
 
 
-def test_invalid_payment_token_returns_402():
-    """Request with invalid HMAC returns 402."""
+def test_invalid_payment_token_returns_400(monkeypatch):
+    """Invalid HMAC header falls back to deposit-required response."""
+    monkeypatch.setattr(gateway_main.settings, "chain_rpc_url", "https://rpc.test")
+    monkeypatch.setattr(gateway_main.settings, "settlement_contract", "0x" + "9" * 40)
     bad_header = json.dumps({
         "token": "bad-token-value",
         "nonce": "nonce",
@@ -84,50 +84,27 @@ def test_invalid_payment_token_returns_402():
         json={"payload": "test"},
         headers={"X-PAYMENT": bad_header},
     )
-    assert resp.status_code == 402
+    assert resp.status_code == 400
 
 
-def test_missing_payment_fields_returns_402():
-    """Request with incomplete payment header returns 402."""
+def test_missing_payment_fields_returns_400(monkeypatch):
+    """Incomplete legacy payment header falls back to deposit-required response."""
+    monkeypatch.setattr(gateway_main.settings, "chain_rpc_url", "https://rpc.test")
+    monkeypatch.setattr(gateway_main.settings, "settlement_contract", "0x" + "9" * 40)
     incomplete = json.dumps({"token": "something"})
     resp = client.post(
         "/v1/call",
         json={"payload": "test"},
         headers={"X-PAYMENT": incomplete},
     )
-    assert resp.status_code == 402
-
-
-def test_402_response_has_payment_required_header():
-    """402 response includes X-PAYMENT-REQUIRED header."""
-    resp = client.post("/v1/call", json={"payload": "test"})
-    assert resp.status_code == 402
-    assert resp.headers.get("X-PAYMENT-REQUIRED") == "true"
-
-
-def test_402_response_has_x402_format(monkeypatch):
-    """402 response follows x402 spec format."""
-    monkeypatch.setenv("SLA_TOKEN_NAME", "Tether USD")
-    monkeypatch.setenv("SLA_TOKEN_VERSION", "")
-    resp = client.post("/v1/call", json={"payload": "test"})
-    data = resp.json()
-    assert data["x402Version"] == 1
-    accept = data["accepts"][0]
-    assert accept["scheme"] == "exact"
-    assert "eip155:" in accept["network"]
-    assert "asset" in accept
-    assert "payTo" in accept
-    assert "maxTimeoutSeconds" in accept
-    assert "extra" in accept
-    # Default token domain for hackathon demo: Tether USD
-    assert accept["extra"]["name"] == "Tether USD"
+    assert resp.status_code == 400
 
 
 # ── x402 Mode Tests (EIP-712 signatures) ────────────────────────────────────
 
 
 def test_x402_create_and_verify(monkeypatch):
-    """Create x402 payment and verify it succeeds in x402 mode."""
+    """Create x402 payment and verify direct request succeeds in x402 mode."""
     from eth_account import Account
 
     monkeypatch.setenv("PAYMENT_MODE", "x402")
@@ -177,6 +154,7 @@ def test_x402_create_and_verify(monkeypatch):
         with patch("gateway.app.main.settings") as mock_settings:
             mock_settings.chain_id = chain_id
             mock_settings.payment_token = asset
+            mock_settings.chain_rpc_url = ""
             mock_settings.settlement_contract = "0x0000000000000000000000000000000000000002"
             mock_settings.seller_upstream_url = "http://localhost:8001"
             mock_settings.seller_address = "0x0000000000000000000000000000000000000001"

@@ -1,11 +1,11 @@
-"""Buyer agent HTTP client — handles 402 challenge and paid request flow.
+"""Buyer agent HTTP client — handles deposit-first request and receipt verification.
 
 This module encapsulates the autonomous buyer's interaction with the SLAgent-402 gateway:
 1. Discover seller capabilities
 2. Negotiate mandate (construct + submit for seller acceptance)
-3. Send unpaid request → receive 402 with payment details
-4. Generate payment authorization
-5. Send paid request → receive response with receipt
+3. Submit deposit() when chain settlement is configured
+4. Call the gateway with request_id + optional deposit tx hash
+5. Receive response with receipt
 6. Verify receipt invariants (fail-closed)
 """
 
@@ -283,7 +283,7 @@ class BuyerAgent:
         return nonce
 
     def _submit_buyer_deposit(self, request_id: str, amount: int) -> str | None:
-        """Submit buyer-funded deposit tx before paid request."""
+        """Submit buyer-funded deposit tx before the gateway call."""
         if not self._init_buyer_chain():
             return None
 
@@ -339,7 +339,7 @@ class BuyerAgent:
         delay_ms: int = 0,
         scenario_tag: str = "",
     ) -> BuyerResult:
-        """Execute the full buyer flow: 402 challenge → paid request → verify.
+        """Execute the full buyer flow: deposit (optional) → call → verify.
 
         Args:
             mode: Seller mode (fast, slow, invalid, error, timeout)
@@ -353,37 +353,18 @@ class BuyerAgent:
         """
         max_price_int = int(self.max_price)
         request_id_hint = self._make_request_id(mode)
-        call_body: dict = {"mode": mode, "request_id": request_id_hint}
+        call_body: dict = {
+            "mode": mode,
+            "request_id": request_id_hint,
+            "buyer": self.buyer_address,
+        }
         if delay_ms > 0:
             call_body["delay_ms"] = delay_ms
         if scenario_tag:
             call_body["scenario_tag"] = scenario_tag
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            # Step 1: Unpaid request → expect 402
-            resp_402 = await client.post(
-                f"{self.gateway_url}/v1/call",
-                json=call_body,
-            )
-
-            if resp_402.status_code != 402:
-                return BuyerResult(
-                    request_id="",
-                    mode=mode,
-                    success=False,
-                    metrics={},
-                    validation_passed=False,
-                    payout=0,
-                    refund=0,
-                    max_price=max_price_int,
-                    receipt_hash="",
-                    tx_hash=None,
-                    seller_response={},
-                    invariant_checks=[],
-                    error=f"Expected 402, got {resp_402.status_code}",
-                )
-
-            # Step 2: Buyer-funded on-chain deposit (if chain env is configured)
+            # Step 1: Buyer-funded on-chain deposit (if chain env is configured)
             try:
                 deposit_tx_hash = self._submit_buyer_deposit(request_id_hint, max_price_int)
             except Exception as e:
@@ -405,10 +386,11 @@ class BuyerAgent:
                     error=f"Buyer deposit failed: {e}",
                 )
 
-            # Step 3: Paid request
-            headers = self._make_payment_header()
+            # Step 2: Gateway call (deposit-backed when tx hash is present)
+            headers: dict[str, str] = {}
             if deposit_tx_hash:
                 headers["X-DEPOSIT-TX-HASH"] = deposit_tx_hash
+                call_body["deposit_tx_hash"] = deposit_tx_hash
             query_params = f"mode={mode}"
             if delay_ms > 0:
                 query_params += f"&delay_ms={delay_ms}"
@@ -434,7 +416,7 @@ class BuyerAgent:
                     settle_tx_hash=None,
                     seller_response={},
                     invariant_checks=[],
-                    error=f"Paid request failed: {resp.status_code} {resp.text[:200]}",
+                    error=f"Gateway request failed: {resp.status_code} {resp.text[:200]}",
                 )
 
             data = resp.json()

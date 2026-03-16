@@ -1,35 +1,19 @@
 #!/usr/bin/env python3
-"""SLAgent-402 End-to-End Demo Script.
-
-Runs three scenarios against the gateway:
-1. Fast + valid   → full payout ($0.10)
-2. Slow + valid   → base pay ($0.06)
-3. Invalid output  → zero payout (full refund)
-
-Prerequisites:
-    # Terminal 1: Start Gemini seller (or set SELLER_FALLBACK=true for local testing)
-    GEMINI_API_KEY="..." uvicorn seller.main:app --port 8001
-
-    # Terminal 2: Start gateway
-    uvicorn gateway.app.main:app --port 8000
-
-    # Terminal 3: Run this script
-    python scripts/run_demo.py
-"""
+"""SLAgent-402 End-to-End Demo Script."""
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
+import uuid
 
 import httpx
 
+from buyer_agent.client import BuyerAgent
 from shared.env import bootstrap_env
 
 from gateway.app.demo_keys import inject_demo_env
-from gateway.app.x402 import create_payment_token, create_x402_payment
 
 # Load repo-root .env, then inject demo keys (if configured).
 bootstrap_env()
@@ -56,54 +40,24 @@ def _default_address(fill: str) -> str:
     return "0x" + (fill * 40)
 
 
-def make_payment_header(path: str = "/v1/call") -> dict[str, str]:
-    """Create a valid payment header for the demo.
+def _make_request_id(mode: str) -> str:
+    ts_ms = int(time.time() * 1000)
+    return f"req_{mode}_{ts_ms}_{uuid.uuid4().hex[:8]}"
 
-    Supports two modes:
-    - PAYMENT_MODE=hmac (default): JSON header with HMAC token
-    - PAYMENT_MODE=x402: Base64 header with EIP-712 signed authorization (see gateway/app/x402.py)
-    """
-    payment_mode = os.getenv("PAYMENT_MODE", "hmac")
 
-    buyer_address = os.getenv("BUYER_ADDRESS", "") or _default_address("1")
-    seller_address = os.getenv("SELLER_ADDRESS", "") or _default_address("2")
+def _maybe_submit_deposit(request_id: str, buyer_address: str) -> str | None:
+    buyer_private_key = os.getenv("BUYER_PRIVATE_KEY", "")
+    if not buyer_private_key:
+        return None
 
-    if payment_mode == "x402":
-        buyer_private_key = os.getenv("BUYER_PRIVATE_KEY", "")
-        if not buyer_private_key:
-            raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
-
-        chain_id = int(os.getenv("CHAIN_ID", "11155111"))
-        asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
-        if not asset:
-            raise RuntimeError("PAYMENT_MODE=x402 requires PAYMENT_TOKEN_ADDRESS")
-        token_name = os.getenv("SLA_TOKEN_NAME", "Tether USD")
-        token_version = os.getenv("SLA_TOKEN_VERSION", "")
-
-        header_val = create_x402_payment(
-            private_key=buyer_private_key,
-            from_address=buyer_address,
-            to_address=seller_address,
-            value=MAX_PRICE,
-            asset=asset,
-            chain_id=chain_id,
-            token_name=token_name,
-            token_version=token_version,
-        )
-        return {"X-PAYMENT": header_val}
-
-    # Default: HMAC mode
-    nonce = str(int(time.time() * 1000))
-    token = create_payment_token(path=path, max_price=MAX_PRICE, nonce=nonce)
-    header_val = json.dumps(
-        {
-            "token": token,
-            "nonce": nonce,
-            "max_price": MAX_PRICE,
-            "buyer": buyer_address,
-        }
+    agent = BuyerAgent(
+        gateway_url=GATEWAY_URL,
+        seller_url=SELLER_URL,
+        buyer_address=buyer_address,
+        max_price=MAX_PRICE,
+        buyer_private_key=buyer_private_key,
     )
-    return {"X-PAYMENT": header_val}
+    return agent._submit_buyer_deposit(request_id, int(MAX_PRICE))
 
 
 def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
@@ -111,30 +65,33 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     name = scenario["name"]
     mode = scenario["mode"]
     token_symbol = _token_symbol()
+    buyer_address = os.getenv("BUYER_ADDRESS", "") or _default_address("1")
+    request_id = _make_request_id(mode)
+    headers: dict[str, str] = {}
+    call_body: dict[str, object] = {"mode": mode, "buyer": buyer_address, "request_id": request_id}
 
     print(f"\n{'='*60}")
     print(f"  Scenario: {name} (mode={mode})")
     print(f"{'='*60}")
 
-    # Step 1: Unpaid request → expect 402
-    print("\n  [1] Sending unpaid request...")
-    resp = client.post(
-        f"{GATEWAY_URL}/v1/call",
-        json={"mode": mode},
-    )
-    if resp.status_code != 402:
-        print(f"  ERROR: Expected 402, got {resp.status_code}")
+    print("\n  [1] Preparing deposit context...")
+    try:
+        deposit_tx_hash = _maybe_submit_deposit(request_id, buyer_address)
+    except Exception as e:
+        print(f"  ERROR: Deposit failed: {e}")
         return None
-    print(f"  ✓ Got 402 Payment Required")
-    payment_details = resp.json()
-    print(f"    max_price: {payment_details['accepts'][0]['maxAmountRequired']}")
 
-    # Step 2: Paid request
-    print("\n  [2] Sending paid request...")
-    headers = make_payment_header()
+    if deposit_tx_hash:
+        headers["X-DEPOSIT-TX-HASH"] = deposit_tx_hash
+        call_body["deposit_tx_hash"] = deposit_tx_hash
+        print(f"  ✓ Deposit submitted: {deposit_tx_hash}")
+    else:
+        print("  ✓ No chain deposit submitted (mock/no-chain mode)")
+
+    print("\n  [2] Sending request...")
     resp = client.post(
         f"{GATEWAY_URL}/v1/call?mode={mode}",
-        json={"mode": mode},
+        json=call_body,
         headers=headers,
     )
 
@@ -154,6 +111,7 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     refund = int(data.get("refund", "0"))
     receipt_hash = data.get("receipt_hash", "")
     tx_hash = data.get("tx_hash")
+    deposit_tx_hash = data.get("deposit_tx_hash")
 
     # LLM evidence: check seller response headers (forwarded via gateway response)
     breach_reasons = data.get("breach_reasons", [])
@@ -166,6 +124,7 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     print(f"    payout:           {payout} ({payout/1_000_000:.6f} {token_symbol})")
     print(f"    refund:           {refund} ({refund/1_000_000:.6f} {token_symbol})")
     print(f"    receipt_hash:     {receipt_hash[:20]}...")
+    print(f"    deposit_tx_hash:  {deposit_tx_hash or 'mock (no chain)'}")
     print(f"    tx_hash:          {tx_hash or 'mock (no chain)'}")
     if breach_reasons:
         print(f"    breach_reasons:   {', '.join(breach_reasons)}")

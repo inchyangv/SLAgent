@@ -1,4 +1,4 @@
-"""SLAgent-402 Gateway — FastAPI reverse proxy with metrics, validation, pricing, x402."""
+"""SLAgent-402 Gateway — FastAPI reverse proxy with deposit-first settlement."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from web3 import Web3
 
 from gateway.app.config import settings
+from gateway.app.deposit_verifier import verify_deposit_submission
 from gateway.app.events import event_store
 from gateway.app.mandates import mandate_store
 from gateway.app.metrics import RequestMetrics
@@ -32,7 +33,7 @@ from gateway.app.settlement_client import (
     submit_finalize,
 )
 from gateway.app.validators.json_schema import validate_json_schema
-from gateway.app.x402 import create_402_response, verify_payment_header
+from gateway.app.x402 import verify_payment_header
 
 logger = logging.getLogger("sla-gateway")
 
@@ -126,6 +127,10 @@ def _gateway_address_from_private_key() -> str:
 
 def _token_symbol() -> str:
     return os.getenv("SLA_TOKEN_SYMBOL", "USDT")
+
+
+def _default_address(fill: str) -> str:
+    return "0x" + (fill * 40)
 
 
 def _resolve_balance_addresses() -> dict[str, str]:
@@ -307,7 +312,7 @@ async def suggest_negotiation_terms(request: Request) -> JSONResponse:
 
 @app.post("/v1/call")
 async def call_endpoint(request: Request) -> JSONResponse:
-    """Main proxy endpoint with x402 payment gating.
+    """Main proxy endpoint with deposit-first settlement authorization.
 
     Requires mandate_id in body. Falls back to DEFAULT_MANDATE if not provided
     (for backward compatibility with existing demo scripts).
@@ -330,36 +335,74 @@ async def call_endpoint(request: Request) -> JSONResponse:
         mandate_id = ""
 
     max_price = mandate["max_price"]
-
-    # x402: check for payment
-    payment_info = verify_payment_header(
-        request,
-        max_price=max_price,
-        chain_id=settings.chain_id,
-        asset=settings.payment_token,
-    )
-    if payment_info is None:
-        event_store.record(
-            kind="payment.402_issued", actor="gateway", mandate_id=mandate_id,
-            data={"max_price": max_price},
-        )
-        return create_402_response(
-            max_price=max_price,
-            payment_token_address=settings.payment_token,
-            settlement_contract=settings.settlement_contract,
-            chain_id=settings.chain_id,
-            seller=settings.seller_address or settings.seller_upstream_url,
-        )
-
-    buyer = payment_info["buyer"]
-    seller_addr = mandate.get("seller") or settings.seller_address or settings.seller_upstream_url
-    gateway_addr = settings.gateway_private_key and "" or ""  # filled by settlement_client
-
     request_id_hint = str(payload.get("request_id", "")).strip()
     request_id = request_id_hint or generate_request_id()
+    buyer = str(
+        mandate.get("buyer")
+        or payload.get("buyer")
+        or settings.buyer_address
+        or _default_address("1")
+    ).strip()
+    deposit_header = request.headers.get("X-DEPOSIT-TX-HASH")
+    deposit_body = str(payload.get("deposit_tx_hash", "")).strip() or None
+    deposit_tx = deposit_header or deposit_body or None
+    deposit_source = "header" if deposit_header else "body" if deposit_body else "missing"
+
+    deposit_info = verify_deposit_submission(
+        request_id=request_id,
+        buyer=buyer,
+        max_price=max_price,
+        deposit_tx_hash=deposit_tx,
+        chain_rpc_url=settings.chain_rpc_url,
+        settlement_contract=settings.settlement_contract,
+        source=deposit_source,
+    )
+    payment_info = None
+    if deposit_info is None and request.headers.get("X-PAYMENT"):
+        payment_info = verify_payment_header(
+            request,
+            max_price=max_price,
+            chain_id=settings.chain_id,
+            asset=settings.payment_token,
+        )
+        if payment_info:
+            buyer = payment_info["buyer"]
+
+    if deposit_info is None and payment_info is None:
+        event_store.record(
+            kind="payment.deposit_required",
+            actor="gateway",
+            request_id=request_id,
+            mandate_id=mandate_id,
+            data={
+                "max_price": max_price,
+                "buyer": buyer,
+                "chain_configured": bool(settings.chain_rpc_url and settings.settlement_contract),
+            },
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Deposit Required",
+                "request_id": request_id,
+                "buyer": buyer,
+                "max_price": max_price,
+                "settlement_contract": settings.settlement_contract,
+                "detail": "Submit deposit() before calling /v1/call when chain settlement is enabled.",
+            },
+        )
+
+    seller_addr = mandate.get("seller") or settings.seller_address or settings.seller_upstream_url
     event_store.record(
-        kind="payment.verified", actor="gateway", request_id=request_id,
-        mandate_id=mandate_id, data={"buyer": buyer, "mode": payment_info.get("mode", "hmac")},
+        kind="payment.verified",
+        actor="gateway",
+        request_id=request_id,
+        mandate_id=mandate_id,
+        data={
+            "buyer": buyer,
+            "mode": deposit_info.get("mode") if deposit_info else payment_info.get("mode", "legacy_x402"),
+            "deposit_tx_hash": deposit_info.get("tx_hash") if deposit_info else None,
+        },
     )
     rm = RequestMetrics()
     rm.start()
@@ -583,14 +626,14 @@ async def call_endpoint(request: Request) -> JSONResponse:
     # Buyer-funded escrow: buyer submits deposit before paid request.
     # Gateway only finalizes settlement using the deposited escrow.
     receipt_hash = receipt.hashes.get("receipt_hash", "")
-    deposit_tx = request.headers.get("X-DEPOSIT-TX-HASH") or str(payload.get("deposit_tx_hash", "")).strip() or None
     event_store.record(
         kind="chain.deposit_submitted", actor="buyer", request_id=request_id,
         mandate_id=mandate_id,
         data={
             "tx_hash": deposit_tx,
             "amount": pricing_decision.max_price,
-            "source": "client_header" if deposit_tx else "missing",
+            "source": deposit_info.get("source") if deposit_info else "legacy_payment_header",
+            "verification_mode": deposit_info.get("mode") if deposit_info else "legacy_x402",
         },
     )
 

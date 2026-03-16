@@ -1,4 +1,4 @@
-"""Tests for x402 agentic tool chain — budget, catalog, CDP wallet, multi-step execution."""
+"""Tests for the agentic tool chain — budget, wallet, multi-step execution."""
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ def test_cdp_wallet_sign_payment():
 
 
 def _make_mock_handler():
-    """Create a mock handler that simulates 402 challenge + paid response."""
+    """Create a mock handler that simulates a direct paid response."""
     call_count = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -166,10 +166,7 @@ def _make_mock_handler():
             has_payment = "x-payment" in {k.lower(): v for k, v in request.headers.items()}
 
             if not has_payment:
-                return httpx.Response(
-                    402,
-                    json={"error": "Payment Required", "accepts": [{"maxAmountRequired": "100000"}]},
-                )
+                return httpx.Response(400, json={"error": "missing legacy payment header"})
 
             call_count["n"] += 1
             return httpx.Response(
@@ -208,7 +205,7 @@ def mock_gateway(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_execute_single_tool(mock_gateway):
-    """Single tool execution goes through 402 → pay → receipt."""
+    """Single tool execution produces receipt + spend record."""
     tool = ToolDef(
         tool_id="test_tool",
         name="Test Tool",
@@ -235,7 +232,7 @@ async def test_execute_single_tool(mock_gateway):
 
 @pytest.mark.asyncio
 async def test_execute_chain_two_steps(mock_gateway):
-    """Full chain with 2 tools shows 2 x402 payments."""
+    """Full chain with 2 tools shows 2 direct paid requests."""
     tools = [
         ToolDef("data_lookup", "Data Lookup", "test", "/seller/call", "50000", 5000, "standard", "invoice_v1", "fast", "offer_bronze_v1"),
         ToolDef("report_summarize", "Report Summary", "test", "/seller/call", "80000", 3000, "premium", "invoice_v1", "fast", "offer_silver_v1"),

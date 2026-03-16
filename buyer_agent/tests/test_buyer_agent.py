@@ -25,17 +25,6 @@ def _make_mock_handler(payout: int, refund: int, validation_passed: bool = True)
 
         # Call endpoint
         if "/v1/call" in url and request.method == "POST":
-            has_payment = "x-payment" in {k.lower(): v for k, v in request.headers.items()}
-
-            if not has_payment:
-                return httpx.Response(
-                    402,
-                    json={
-                        "error": "Payment Required",
-                        "accepts": [{"maxAmountRequired": "100000", "nonce": "123"}],
-                    },
-                )
-
             return httpx.Response(
                 200,
                 json={
@@ -65,21 +54,14 @@ async def _run_mock_flow(
     refund: int,
     validation_passed: bool = True,
 ) -> BuyerResult:
-    """Run a mock 402→paid flow and check invariants."""
+    """Run a mock deposit-first flow and check invariants."""
     handler = _make_mock_handler(payout, refund, validation_passed)
     transport = httpx.MockTransport(handler)
 
     async with httpx.AsyncClient(transport=transport) as client:
-        # Step 1: 402
-        resp_402 = await client.post("http://test/v1/call", json={"mode": mode})
-        assert resp_402.status_code == 402
-
-        # Step 2: Paid
-        headers = agent._make_payment_header()
         resp = await client.post(
             f"http://test/v1/call?mode={mode}",
-            json={"mode": mode},
-            headers=headers,
+            json={"mode": mode, "buyer": agent.buyer_address, "request_id": "req_test_001"},
         )
         assert resp.status_code == 200
         data = resp.json()
