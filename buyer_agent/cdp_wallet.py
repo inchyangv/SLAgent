@@ -81,7 +81,7 @@ class CDPWallet:
         value: str,
         asset: str,
         chain_id: int,
-        token_name: str = "USDC",
+        token_name: str = "Tether USD",
         token_version: str = "",
     ) -> CDPSignResult:
         """Sign an x402 payment authorization via CDP wallet.

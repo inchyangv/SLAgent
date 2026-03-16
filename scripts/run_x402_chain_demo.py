@@ -54,6 +54,10 @@ logging.basicConfig(
 logger = logging.getLogger("x402-chain-demo")
 
 
+def _token_symbol() -> str:
+    return os.getenv("SLA_TOKEN_SYMBOL", "USDT")
+
+
 def _sep(title: str) -> None:
     print(f"\n{'='*60}")
     print(f"  {title}")
@@ -66,6 +70,7 @@ async def run_demo(
     budget_usdc: int,
     max_step_price: int,
 ) -> None:
+    token_symbol = _token_symbol()
     # ── Step 1: Discover tools ────────────────────────────────────────────
     _sep("STEP 1: Tool Catalog Discovery")
     tools = load_tool_catalog()
@@ -97,9 +102,9 @@ async def run_demo(
     budget = BudgetConfig(budget_usdc=budget_usdc, max_step_price=max_step_price)
     total_tool_cost = sum(int(t.price) for t in tools)
     print(f"Budget config:")
-    print(f"  total_budget:   {budget.budget_usdc} ({budget.budget_usdc / 1_000_000:.2f} USDC)")
-    print(f"  max_step_price: {budget.max_step_price} ({budget.max_step_price / 1_000_000:.2f} USDC)")
-    print(f"  total tool cost: {total_tool_cost} ({total_tool_cost / 1_000_000:.2f} USDC)")
+    print(f"  total_budget:   {budget.budget_usdc} ({budget.budget_usdc / 1_000_000:.2f} {token_symbol})")
+    print(f"  max_step_price: {budget.max_step_price} ({budget.max_step_price / 1_000_000:.2f} {token_symbol})")
+    print(f"  total tool cost: {total_tool_cost} ({total_tool_cost / 1_000_000:.2f} {token_symbol})")
     if total_tool_cost > budget.budget_usdc:
         print(f"  WARNING: Total tool cost exceeds budget — chain will abort mid-way")
     else:
@@ -138,8 +143,8 @@ async def run_demo(
         )
 
     print()
-    print(f"Total spent (net):  {result.total_spent:>8} ({result.total_spent / 1_000_000:.4f} USDC)")
-    print(f"Total refunded:     {result.total_refunded:>8} ({result.total_refunded / 1_000_000:.4f} USDC)")
+    print(f"Total spent (net):  {result.total_spent:>8} ({result.total_spent / 1_000_000:.4f} {token_symbol})")
+    print(f"Total refunded:     {result.total_refunded:>8} ({result.total_refunded / 1_000_000:.4f} {token_symbol})")
     print(f"Budget initial:     {result.budget_initial:>8}")
     print(f"Budget remaining:   {result.budget_remaining:>8}")
 

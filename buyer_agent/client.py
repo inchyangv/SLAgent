@@ -215,9 +215,11 @@ class BuyerAgent:
             if not self.buyer_private_key:
                 raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
 
-            chain_id = int(os.getenv("CHAIN_ID", "103698795"))
+            chain_id = int(os.getenv("CHAIN_ID", "11155111"))
             asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
-            token_name = os.getenv("SLA_TOKEN_NAME", "USDC")
+            if not asset:
+                raise RuntimeError("PAYMENT_MODE=x402 requires PAYMENT_TOKEN_ADDRESS")
+            token_name = os.getenv("SLA_TOKEN_NAME", "Tether USD")
             token_version = os.getenv("SLA_TOKEN_VERSION", "")
             # payTo should match seller EVM address used by gateway challenge payload
             to_address = (

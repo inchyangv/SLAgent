@@ -41,6 +41,10 @@ SCENARIOS = [
 ]
 
 
+def _token_symbol() -> str:
+    return os.getenv("SLA_TOKEN_SYMBOL", "USDT")
+
+
 def print_header() -> None:
     print("=" * 64)
     print("  SLAgent-402 — Autonomous Buyer Agent")
@@ -50,6 +54,7 @@ def print_header() -> None:
 
 def print_result(scenario: dict, result: BuyerResult) -> None:
     label = scenario["label"]
+    token_symbol = _token_symbol()
     print(f"\n{'─'*64}")
     print(f"  Scenario: {label} (mode={scenario['mode']})")
     print(f"  Expected: {scenario['expect']}")
@@ -63,8 +68,8 @@ def print_result(scenario: dict, result: BuyerResult) -> None:
     print(f"  latency_ms:        {result.metrics.get('latency_ms', '-')}")
     print(f"  ttft_ms:           {result.metrics.get('ttft_ms', '-')}")
     print(f"  validation_passed: {result.validation_passed}")
-    print(f"  payout:            {result.payout:>8} ({result.payout / 1_000_000:.6f} USDC)")
-    print(f"  refund:            {result.refund:>8} ({result.refund / 1_000_000:.6f} USDC)")
+    print(f"  payout:            {result.payout:>8} ({result.payout / 1_000_000:.6f} {token_symbol})")
+    print(f"  refund:            {result.refund:>8} ({result.refund / 1_000_000:.6f} {token_symbol})")
     print(f"  receipt_hash:      {result.receipt_hash[:24]}...")
     print(f"  tx_hash:           {result.tx_hash or 'mock (no chain)'}")
 

@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/SLAToken.sol";
 import "../src/SLASettlement.sol";
 
-/// @notice Deploy SLAToken + SLASettlement for demo networks (ex: SKALE Base Sepolia (BITE v2 Sandbox 2)).
+/// @notice Deploy mock USDT + SLASettlement for Sepolia-style demo networks.
 /// Recommended: use one EOA as deployer+gateway+resolver for the demo.
 contract DeploySlaPayV2 is Script {
     function run() external {
@@ -21,14 +21,13 @@ contract DeploySlaPayV2 is Script {
         address resolver = _envAddressOr("RESOLVER_ADDRESS", broadcaster);
 
         uint256 disputeWindow = vm.envOr("DISPUTE_WINDOW_SECONDS", uint256(60));
-        uint256 bondAmount = vm.envOr("BOND_AMOUNT", uint256(10_000)); // 0.01 SLAT if 6 decimals
+        uint256 bondAmount = vm.envOr("BOND_AMOUNT", uint256(10_000)); // 0.01 USDT if 6 decimals
 
         // Optional bootstrap (mint + approve) for the gateway EOA.
-        uint256 mintToGateway = vm.envOr("MINT_TO_GATEWAY", uint256(1_000_000_000)); // 1000 SLAT (6 decimals)
+        uint256 mintToGateway = vm.envOr("MINT_TO_GATEWAY", uint256(1_000_000_000)); // 1000 USDT (6 decimals)
         bool approveMax = vm.envOr("APPROVE_MAX", true);
 
-        // Optional: use an existing token (ex: USDC on SKALE Base Sepolia (BITE v2 Sandbox 2))
-        // instead of deploying SLAToken.
+        // Optional: use an existing ERC-20 instead of deploying the mock USDT token.
         address existingToken = _envAddressOr("TOKEN_ADDRESS", address(0));
 
         vm.startBroadcast(privateKey);

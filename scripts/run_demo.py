@@ -48,6 +48,10 @@ SCENARIOS = [
 ]
 
 
+def _token_symbol() -> str:
+    return os.getenv("SLA_TOKEN_SYMBOL", "USDT")
+
+
 def _default_address(fill: str) -> str:
     return "0x" + (fill * 40)
 
@@ -69,11 +73,11 @@ def make_payment_header(path: str = "/v1/call") -> dict[str, str]:
         if not buyer_private_key:
             raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
 
-        # Default to SKALE Base Sepolia (BITE v2 Sandbox 2) unless overridden.
-        chain_id = int(os.getenv("CHAIN_ID", "103698795"))
-        # Default to USDC on SKALE Base Sepolia (BITE v2 Sandbox 2) if not provided.
-        asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "") or "0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8"
-        token_name = os.getenv("SLA_TOKEN_NAME", "USDC")
+        chain_id = int(os.getenv("CHAIN_ID", "11155111"))
+        asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
+        if not asset:
+            raise RuntimeError("PAYMENT_MODE=x402 requires PAYMENT_TOKEN_ADDRESS")
+        token_name = os.getenv("SLA_TOKEN_NAME", "Tether USD")
         token_version = os.getenv("SLA_TOKEN_VERSION", "")
 
         header_val = create_x402_payment(
@@ -106,6 +110,7 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     """Run a single demo scenario."""
     name = scenario["name"]
     mode = scenario["mode"]
+    token_symbol = _token_symbol()
 
     print(f"\n{'='*60}")
     print(f"  Scenario: {name} (mode={mode})")
@@ -158,8 +163,8 @@ def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:
     print(f"    latency_ms:       {metrics.get('latency_ms', '-')}")
     print(f"    ttft_ms:          {metrics.get('ttft_ms', '-')}")
     print(f"    validation_passed: {validation_passed}")
-    print(f"    payout:           {payout} ({payout/1_000_000:.6f} USDC)")
-    print(f"    refund:           {refund} ({refund/1_000_000:.6f} USDC)")
+    print(f"    payout:           {payout} ({payout/1_000_000:.6f} {token_symbol})")
+    print(f"    refund:           {refund} ({refund/1_000_000:.6f} {token_symbol})")
     print(f"    receipt_hash:     {receipt_hash[:20]}...")
     print(f"    tx_hash:          {tx_hash or 'mock (no chain)'}")
     if breach_reasons:

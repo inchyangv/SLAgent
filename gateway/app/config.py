@@ -21,17 +21,14 @@ class Settings:
     seller_upstream_url: str = os.getenv("SELLER_UPSTREAM_URL", "http://localhost:8001")
     seller_address: str = os.getenv("SELLER_ADDRESS", "")
     buyer_address: str = os.getenv("BUYER_ADDRESS", "")
-    # SKALE Hackathon chain (BITE v2 Sandbox 2) by default for demos.
-    chain_id: int = int(os.getenv("CHAIN_ID", "103698795"))
+    # Ethereum Sepolia is the default target for the USDT + WDK flow.
+    chain_id: int = int(os.getenv("CHAIN_ID", "11155111"))
     chain_rpc_url: str = os.getenv(
         "CHAIN_RPC_URL",
-        "https://base-sepolia-testnet.skalenodes.com/v1/bite-v2-sandbox",
+        "https://rpc.sepolia.org",
     )
     settlement_contract: str = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
-    payment_token: str = os.getenv(
-        "PAYMENT_TOKEN_ADDRESS",
-        "0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8",  # USDC (predeployed)
-    )
+    payment_token: str = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
     gateway_private_key: str = os.getenv("GATEWAY_PRIVATE_KEY", "")
     host: str = os.getenv("GATEWAY_HOST", "0.0.0.0")
     port: int = int(os.getenv("GATEWAY_PORT", "8000"))

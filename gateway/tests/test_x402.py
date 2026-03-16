@@ -105,8 +105,10 @@ def test_402_response_has_payment_required_header():
     assert resp.headers.get("X-PAYMENT-REQUIRED") == "true"
 
 
-def test_402_response_has_x402_format():
+def test_402_response_has_x402_format(monkeypatch):
     """402 response follows x402 spec format."""
+    monkeypatch.setenv("SLA_TOKEN_NAME", "Tether USD")
+    monkeypatch.setenv("SLA_TOKEN_VERSION", "")
     resp = client.post("/v1/call", json={"payload": "test"})
     data = resp.json()
     assert data["x402Version"] == 1
@@ -117,8 +119,8 @@ def test_402_response_has_x402_format():
     assert "payTo" in accept
     assert "maxTimeoutSeconds" in accept
     assert "extra" in accept
-    # Default token domain for hackathon demo: USDC
-    assert accept["extra"]["name"] == "USDC"
+    # Default token domain for hackathon demo: Tether USD
+    assert accept["extra"]["name"] == "Tether USD"
 
 
 # ── x402 Mode Tests (EIP-712 signatures) ────────────────────────────────────
@@ -140,7 +142,7 @@ def test_x402_create_and_verify(monkeypatch):
     chain_id = 1444673419
 
     # Ensure token domain is deterministic for the test.
-    monkeypatch.setenv("SLA_TOKEN_NAME", "USDC")
+    monkeypatch.setenv("SLA_TOKEN_NAME", "Tether USD")
     monkeypatch.setenv("SLA_TOKEN_VERSION", "")
 
     # Create the x402 payment

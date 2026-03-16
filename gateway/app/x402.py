@@ -37,11 +37,11 @@ PAYMENT_SECRET = "slagent-402-demo-secret"  # HMAC mode only
 def _token_domain() -> tuple[str, str]:
     """Return (name, version) for the EIP-712 domain.
 
-    Note: For USDC on SKALE Base Sepolia (BITE v2 Sandbox 2):
-    - name() == "USDC"
+    Default matches the local Sepolia mock token:
+    - name() == "Tether USD"
     - version() == "" (empty string)
     """
-    name = os.getenv("SLA_TOKEN_NAME", "USDC")
+    name = os.getenv("SLA_TOKEN_NAME", "Tether USD")
     version = os.getenv("SLA_TOKEN_VERSION", "")
     return name, version
 

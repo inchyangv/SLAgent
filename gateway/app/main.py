@@ -124,6 +124,10 @@ def _gateway_address_from_private_key() -> str:
         return ""
 
 
+def _token_symbol() -> str:
+    return os.getenv("SLA_TOKEN_SYMBOL", "USDT")
+
+
 def _resolve_balance_addresses() -> dict[str, str]:
     """Resolve buyer/seller/gateway addresses for the dashboard balance panel."""
     latest_mandate = mandate_store.list_all(limit=1)
@@ -153,7 +157,7 @@ async def health() -> dict[str, str]:
 
 @app.get("/v1/balances")
 def get_balances() -> JSONResponse:
-    """Read on-chain USDC balances for buyer/seller/gateway (dashboard use)."""
+    """Read on-chain settlement-token balances for buyer/seller/gateway."""
     roles = _resolve_balance_addresses()
     token_addr = _to_checksum_or_empty(settings.payment_token)
 
@@ -165,7 +169,7 @@ def get_balances() -> JSONResponse:
         },
         "token": {
             "address": token_addr or settings.payment_token,
-            "symbol": "USDC",
+            "symbol": _token_symbol(),
             "decimals": 6,
         },
         "roles": {
@@ -187,7 +191,7 @@ def get_balances() -> JSONResponse:
         token = w3.eth.contract(address=token_addr, abi=ERC20_VIEW_ABI)
 
         decimals = 6
-        symbol = "USDC"
+        symbol = _token_symbol()
         try:
             decimals = int(token.functions.decimals().call())
         except Exception:

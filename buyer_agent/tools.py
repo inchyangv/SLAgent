@@ -218,9 +218,11 @@ class ToolChainExecutor:
         payment_mode = os.getenv("PAYMENT_MODE", "hmac")
 
         if payment_mode == "x402" and self.cdp_wallet:
-            chain_id = int(os.getenv("CHAIN_ID", "103698795"))
+            chain_id = int(os.getenv("CHAIN_ID", "11155111"))
             asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
-            token_name = os.getenv("SLA_TOKEN_NAME", "USDC")
+            if not asset:
+                raise RuntimeError("PAYMENT_MODE=x402 requires PAYMENT_TOKEN_ADDRESS")
+            token_name = os.getenv("SLA_TOKEN_NAME", "Tether USD")
             token_version = os.getenv("SLA_TOKEN_VERSION", "")
             seller_address = os.getenv("SELLER_ADDRESS", "0x" + "2" * 40)
 

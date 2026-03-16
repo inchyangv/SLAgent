@@ -4,8 +4,8 @@ out = "out"
 libs = ["lib"]
 test = "test"
 solc_version = "0.8.24"
-# SKALE BITE v2 Sandbox 2 requires Istanbul or lower (per SKALE hackathon docs).
-evm_version = "istanbul"
+# Ethereum Sepolia supports Cancun, which matches the WDK + USDT direction.
+evm_version = "cancun"
 
 [profile.default.fmt]
 line_length = 100

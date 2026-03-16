@@ -133,7 +133,7 @@ def test_cdp_wallet_sign_payment():
         to_address="0x2222222222222222222222222222222222222222",
         value="100000",
         asset="0xc4083B1E81ceb461Ccef3FDa8A9F24F0d764B6D8",
-        chain_id=103698795,
+        chain_id=11155111,
     )
     assert isinstance(result, CDPSignResult)
     assert result.signature  # Base64-encoded x402 payload
