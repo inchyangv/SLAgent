@@ -25,7 +25,6 @@ from web3 import Web3
 
 from buyer_agent.wdk_wallet import WDKWallet
 from gateway.app.hashing import compute_mandate_id
-from gateway.app.x402 import create_payment_token, create_x402_payment
 
 logger = logging.getLogger("buyer-agent")
 
@@ -208,53 +207,6 @@ class BuyerAgent:
 
         logger.info("Negotiation: %s", summary)
         return self.negotiation
-
-    def _make_payment_header(self, path: str = "/v1/call") -> dict[str, str]:
-        """Create payment header based on PAYMENT_MODE."""
-        payment_mode = os.getenv("PAYMENT_MODE", "hmac")
-
-        if payment_mode == "x402":
-            if not self.buyer_private_key:
-                raise RuntimeError("PAYMENT_MODE=x402 requires BUYER_PRIVATE_KEY")
-
-            chain_id = int(os.getenv("CHAIN_ID", "11155111"))
-            asset = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
-            if not asset:
-                raise RuntimeError("PAYMENT_MODE=x402 requires PAYMENT_TOKEN_ADDRESS")
-            token_name = os.getenv("SLA_TOKEN_NAME", "Tether USD")
-            token_version = os.getenv("SLA_TOKEN_VERSION", "")
-            # payTo should match seller EVM address used by gateway challenge payload
-            to_address = (
-                os.getenv("SELLER_ADDRESS", "")
-                or (self.negotiation.mandate.get("seller", "") if self.negotiation else "")
-                or "0x" + "2" * 40
-            )
-
-            header_val = create_x402_payment(
-                private_key=self.buyer_private_key,
-                from_address=self.buyer_address,
-                to_address=to_address,
-                value=self.max_price,
-                asset=asset,
-                chain_id=chain_id,
-                token_name=token_name,
-                token_version=token_version,
-            )
-            return {"X-PAYMENT": header_val}
-
-        nonce = str(int(time.time() * 1000))
-        token = create_payment_token(
-            path=path,
-            max_price=self.max_price,
-            nonce=nonce,
-        )
-        header_val = json.dumps({
-            "token": token,
-            "nonce": nonce,
-            "max_price": self.max_price,
-            "buyer": self.buyer_address,
-        })
-        return {"X-PAYMENT": header_val}
 
     def _make_request_id(self, mode: str) -> str:
         ts_ms = int(time.time() * 1000)

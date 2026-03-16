@@ -162,3 +162,23 @@ class WDKWallet:
             },
         )
         return str(data.get("signature", ""))
+
+    def sign_bytes(self, payload_hex: str) -> str:
+        address = self.ensure_wallet_loaded()
+        data = self._request(
+            "POST",
+            "/wallet/sign-bytes",
+            json_body={
+                "address": address,
+                "payload": payload_hex,
+            },
+        )
+        return str(data.get("signature", ""))
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "address": self._address,
+            "expected_address": self.expected_address,
+            "service_url": self.service_url,
+            "account_index": self.account_index,
+        }

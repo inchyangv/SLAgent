@@ -17,6 +17,28 @@ from web3 import Web3
 logger = logging.getLogger("sla-facilitator")
 
 
+def compute_settlement_hash(
+    *,
+    mandate_id: bytes,
+    request_id: bytes,
+    buyer: str,
+    seller: str,
+    max_price: int,
+    payout: int,
+    receipt_hash: bytes,
+) -> bytes:
+    """Replicate Solidity keccak256(abi.encodePacked(...)) for settlement auth."""
+    return Web3.keccak(
+        mandate_id
+        + request_id
+        + bytes.fromhex(buyer[2:].lower().zfill(40))
+        + bytes.fromhex(seller[2:].lower().zfill(40))
+        + max_price.to_bytes(32, "big")
+        + payout.to_bytes(32, "big")
+        + receipt_hash
+    )
+
+
 class SettlementClient:
     """Coordinates settlement transactions to the on-chain contract."""
 
@@ -85,17 +107,15 @@ class SettlementClient:
         if not self.gateway_account:
             raise RuntimeError("Gateway private key not configured")
 
-        # Replicate Solidity: keccak256(abi.encodePacked(...))
-        packed = (
-            mandate_id
-            + request_id
-            + bytes.fromhex(buyer[2:].lower().zfill(40))
-            + bytes.fromhex(seller[2:].lower().zfill(40))
-            + max_price.to_bytes(32, "big")
-            + payout.to_bytes(32, "big")
-            + receipt_hash
+        msg_hash = compute_settlement_hash(
+            mandate_id=mandate_id,
+            request_id=request_id,
+            buyer=buyer,
+            seller=seller,
+            max_price=max_price,
+            payout=payout,
+            receipt_hash=receipt_hash,
         )
-        msg_hash = Web3.keccak(packed)
         signed = Account.sign_message(encode_defunct(msg_hash), self.gateway_private_key)
         return signed.signature
 

@@ -33,7 +33,6 @@ from gateway.app.settlement_client import (
     submit_finalize,
 )
 from gateway.app.validators.json_schema import validate_json_schema
-from gateway.app.x402 import verify_payment_header
 
 logger = logging.getLogger("sla-gateway")
 
@@ -357,18 +356,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
         settlement_contract=settings.settlement_contract,
         source=deposit_source,
     )
-    payment_info = None
-    if deposit_info is None and request.headers.get("X-PAYMENT"):
-        payment_info = verify_payment_header(
-            request,
-            max_price=max_price,
-            chain_id=settings.chain_id,
-            asset=settings.payment_token,
-        )
-        if payment_info:
-            buyer = payment_info["buyer"]
-
-    if deposit_info is None and payment_info is None:
+    if deposit_info is None:
         event_store.record(
             kind="payment.deposit_required",
             actor="gateway",
@@ -400,8 +388,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
         mandate_id=mandate_id,
         data={
             "buyer": buyer,
-            "mode": deposit_info.get("mode") if deposit_info else payment_info.get("mode", "legacy_x402"),
-            "deposit_tx_hash": deposit_info.get("tx_hash") if deposit_info else None,
+            "mode": deposit_info.get("mode"),
+            "deposit_tx_hash": deposit_info.get("tx_hash"),
         },
     )
     rm = RequestMetrics()
@@ -632,8 +620,8 @@ async def call_endpoint(request: Request) -> JSONResponse:
         data={
             "tx_hash": deposit_tx,
             "amount": pricing_decision.max_price,
-            "source": deposit_info.get("source") if deposit_info else "legacy_payment_header",
-            "verification_mode": deposit_info.get("mode") if deposit_info else "legacy_x402",
+            "source": deposit_info.get("source"),
+            "verification_mode": deposit_info.get("mode"),
         },
     )
 

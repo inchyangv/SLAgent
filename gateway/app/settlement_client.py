@@ -7,12 +7,16 @@ Signs receipt, submits settlement, handles disputes.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import nullcontext
 from typing import Any
 
+from eth_account import Account
 from web3 import Web3
 
+from buyer_agent.wdk_wallet import WDKWallet
 from facilitator.settlement import SettlementClient
+from facilitator.settlement import compute_settlement_hash
 from gateway.app.config import settings
 
 logger = logging.getLogger("sla-gateway.settlement")
@@ -74,6 +78,7 @@ SETTLEMENT_ABI = [
 
 # Singleton settlement client
 _client: SettlementClient | None = None
+_gateway_wdk_wallet: WDKWallet | None = None
 
 
 def _normalize_addr(addr: str, label: str) -> str | None:
@@ -94,6 +99,29 @@ def get_settlement_client() -> SettlementClient:
             settlement_abi=SETTLEMENT_ABI,
         )
     return _client
+
+
+def _expected_gateway_address() -> str | None:
+    env_address = os.getenv("GATEWAY_ADDRESS", "").strip()
+    if env_address and Web3.is_address(env_address):
+        return Web3.to_checksum_address(env_address)
+
+    if settings.gateway_private_key:
+        try:
+            return Account.from_key(settings.gateway_private_key).address
+        except Exception:
+            return None
+    return None
+
+
+def _get_gateway_wdk_wallet() -> WDKWallet | None:
+    global _gateway_wdk_wallet
+    if _gateway_wdk_wallet is None:
+        _gateway_wdk_wallet = WDKWallet.from_env(
+            role="gateway",
+            expected_address=_expected_gateway_address(),
+        )
+    return _gateway_wdk_wallet
 
 
 def submit_deposit(
@@ -160,18 +188,50 @@ def settle_request(
         }
 
     try:
-        gateway_sig = client.sign_settlement(
-            mandate_id=mandate_id_bytes,
-            request_id=request_id_bytes,
-            buyer=buyer_addr,
-            seller=seller_addr,
-            max_price=max_price,
-            payout=payout,
-            receipt_hash=receipt_hash_bytes,
-        )
+        gateway_wallet = _get_gateway_wdk_wallet()
+        if gateway_wallet:
+            digest = compute_settlement_hash(
+                mandate_id=mandate_id_bytes,
+                request_id=request_id_bytes,
+                buyer=buyer_addr,
+                seller=seller_addr,
+                max_price=max_price,
+                payout=payout,
+                receipt_hash=receipt_hash_bytes,
+            )
+            gateway_sig_hex = gateway_wallet.sign_bytes(Web3.to_hex(digest))
+            gateway_sig = bytes.fromhex(gateway_sig_hex[2:] if gateway_sig_hex.startswith("0x") else gateway_sig_hex)
+            gateway_address = gateway_wallet.ensure_wallet_loaded()
+        else:
+            gateway_sig = client.sign_settlement(
+                mandate_id=mandate_id_bytes,
+                request_id=request_id_bytes,
+                buyer=buyer_addr,
+                seller=seller_addr,
+                max_price=max_price,
+                payout=payout,
+                receipt_hash=receipt_hash_bytes,
+            )
+            gateway_address = client.gateway_address
     except RuntimeError:
         logger.info(f"Settlement signing skipped (no key): {request_id}")
         return {"tx_hash": None, "gateway_signature": "", "gateway_address": ""}
+    except Exception as exc:
+        logger.warning("WDK settlement signing failed, falling back to local key: %s", exc)
+        try:
+            gateway_sig = client.sign_settlement(
+                mandate_id=mandate_id_bytes,
+                request_id=request_id_bytes,
+                buyer=buyer_addr,
+                seller=seller_addr,
+                max_price=max_price,
+                payout=payout,
+                receipt_hash=receipt_hash_bytes,
+            )
+            gateway_address = client.gateway_address
+        except RuntimeError:
+            logger.info(f"Settlement signing skipped (no key): {request_id}")
+            return {"tx_hash": None, "gateway_signature": "", "gateway_address": ""}
 
     sig_hex = "0x" + gateway_sig.hex()
 
@@ -194,7 +254,7 @@ def settle_request(
             "mode": "error",
             "error": str(e),
             "gateway_signature": sig_hex,
-            "gateway_address": client.gateway_address,
+            "gateway_address": gateway_address,
         }
     mode = "chain" if tx_hash else "mock"
 
@@ -202,7 +262,7 @@ def settle_request(
         "tx_hash": tx_hash,
         "mode": mode,
         "gateway_signature": sig_hex,
-        "gateway_address": client.gateway_address,
+        "gateway_address": gateway_address,
     }
 
 

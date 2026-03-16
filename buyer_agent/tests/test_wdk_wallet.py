@@ -99,6 +99,8 @@ def test_balance_approve_deposit_and_sign(monkeypatch):
             return _MockResponse(200, {"txHash": "0xdeposit"})
         if url.endswith("/wallet/sign-message"):
             return _MockResponse(200, {"signature": "0xsigned"})
+        if url.endswith("/wallet/sign-bytes"):
+            return _MockResponse(200, {"signature": "0xbytesigned"})
         raise AssertionError(f"unexpected URL {url}")
 
     monkeypatch.setattr(httpx, "request", fake_request)
@@ -122,12 +124,16 @@ def test_balance_approve_deposit_and_sign(monkeypatch):
         buyer_address="0x5555555555555555555555555555555555555555",
     )
     signature = wallet.sign_message("hello")
+    byte_signature = wallet.sign_bytes("0x" + "ab" * 32)
+    status = wallet.status()
 
     assert balance["tokenBalance"] == "2"
     assert approve_tx == "0xapprove"
     assert deposit_tx == "0xdeposit"
     assert signature == "0xsigned"
-    assert len(calls) == 5
+    assert byte_signature == "0xbytesigned"
+    assert status["service_url"] == "http://localhost:3100"
+    assert len(calls) == 6
 
 
 def test_request_raises_service_error(monkeypatch):

@@ -1,15 +1,14 @@
 """Tests for gateway core endpoints."""
 
 import gateway.app.main as gateway_main
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 
 from gateway.app.mandates import mandate_store
 from gateway.app.receipt import receipt_store
-from gateway.app.x402 import create_payment_token
 
 app = gateway_main.app
 
@@ -29,16 +28,6 @@ def clear_stores(monkeypatch):
 
 
 client = TestClient(app)
-
-
-def _payment_header(buyer: str = "0xBUYER", max_price: str = "100000") -> dict[str, str]:
-    """Create headers with a valid X-PAYMENT for testing."""
-    nonce = "test-nonce"
-    token = create_payment_token(path="/v1/call", max_price=max_price, nonce=nonce)
-    header_val = json.dumps({
-        "token": token, "nonce": nonce, "max_price": max_price, "buyer": buyer,
-    })
-    return {"X-PAYMENT": header_val}
 
 
 def test_health():
@@ -63,7 +52,7 @@ def test_call_proxy_success():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        resp = client.post("/v1/call", json={"payload": "test"}, headers=_payment_header())
+        resp = client.post("/v1/call", json={"payload": "test"})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -116,7 +105,7 @@ def test_receipt_storage_and_retrieval():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        resp = client.post("/v1/call", json={"test": True}, headers=_payment_header())
+        resp = client.post("/v1/call", json={"test": True})
         request_id = resp.json()["request_id"]
 
     resp2 = client.get(f"/v1/receipts/{request_id}")
@@ -205,7 +194,6 @@ def test_call_with_mandate_id():
         resp = client.post(
             "/v1/call",
             json={"mandate_id": mid},
-            headers=_payment_header(),
         )
 
     assert resp.status_code == 200
@@ -218,7 +206,6 @@ def test_call_with_unknown_mandate_returns_400():
     resp = client.post(
         "/v1/call",
         json={"mandate_id": "0xunknown"},
-        headers=_payment_header(),
     )
     assert resp.status_code == 400
     assert "Unknown mandate_id" in resp.json()["detail"]
@@ -250,7 +237,6 @@ def test_call_forwards_mode_to_seller():
         resp = client.post(
             "/v1/call?mode=slow",
             json={"some": "data"},
-            headers=_payment_header(),
         )
 
     assert resp.status_code == 200
@@ -291,7 +277,6 @@ def test_call_mode_from_body():
         resp = client.post(
             "/v1/call",
             json={"mode": "invalid"},
-            headers=_payment_header(),
         )
 
     assert resp.status_code == 200
@@ -314,7 +299,7 @@ def test_call_response_includes_deposit_and_settle_tx():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        resp = client.post("/v1/call", json={"payload": "test"}, headers=_payment_header())
+        resp = client.post("/v1/call", json={"payload": "test"})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -342,7 +327,7 @@ def test_call_deposit_event_recorded():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        resp = client.post("/v1/call", json={"payload": "test"}, headers=_payment_header())
+        resp = client.post("/v1/call", json={"payload": "test"})
 
     assert resp.status_code == 200
     request_id = resp.json()["request_id"]

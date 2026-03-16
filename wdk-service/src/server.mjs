@@ -79,6 +79,14 @@ function normalizeValue(value) {
   return String(value);
 }
 
+function getWalletSigner(record) {
+  const privateKey = record.account?.keyPair?.privateKey;
+  if (!privateKey) {
+    throw badRequest("wallet private key is unavailable");
+  }
+  return new ethers.Wallet(ethers.hexlify(privateKey));
+}
+
 async function withTimeout(promise, ms) {
   return Promise.race([
     promise,
@@ -237,6 +245,21 @@ app.post("/wallet/sign-message", async (req, res, next) => {
     }
     const record = getWalletRecord(address);
     const signature = await record.account.sign(String(message));
+    res.json({ signature });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/wallet/sign-bytes", async (req, res, next) => {
+  try {
+    const { address, payload } = req.body || {};
+    if (!address || !payload) {
+      throw badRequest("address and payload are required");
+    }
+    const record = getWalletRecord(address);
+    const signer = getWalletSigner(record);
+    const signature = await signer.signMessage(ethers.getBytes(String(payload)));
     res.json({ signature });
   } catch (error) {
     next(error);
