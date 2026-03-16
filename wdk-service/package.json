@@ -1,0 +1,17 @@
+{
+  "name": "slagent-402-wdk-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WDK sidecar for SLAgent-402 deposit-first settlement flows",
+  "scripts": {
+    "dev": "node src/server.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@tetherto/wdk": "^1.0.0-beta.6",
+    "@tetherto/wdk-wallet-evm": "^1.0.0-beta.8",
+    "ethers": "^6.15.0",
+    "express": "^4.21.2"
+  }
+}
