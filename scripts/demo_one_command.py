@@ -82,6 +82,12 @@ def wait_for_health(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SLAgent-402 one-command demo")
     parser.add_argument(
+        "--network",
+        choices=["env", "sepolia"],
+        default=os.getenv("DEMO_NETWORK", "env"),
+        help="Apply a named network profile before starting services",
+    )
+    parser.add_argument(
         "--autonomous",
         action="store_true",
         help="Run the autonomous buyer loop instead of the fixed three scenarios",
@@ -109,10 +115,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
+    if args.network != "env":
+        from shared.network_profiles import apply_network_profile
+
+        profile = apply_network_profile(args.network)
+    else:
+        profile = {}
+
     print("=" * 64)
     print("  SLAgent-402 — One-Command Demo")
     print("  Pay by proof, not upfront.")
     print("=" * 64)
+    if profile:
+        log("NET", f"{args.network} profile applied ({profile.get('CHAIN_RPC_URL', '')})")
 
     # Check demo keys
     if demo_injected:
