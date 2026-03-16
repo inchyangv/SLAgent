@@ -244,6 +244,39 @@ def test_call_forwards_mode_to_seller():
     assert "mode=slow" in captured_url[0]
 
 
+def test_call_uses_seller_url_override():
+    """Test that /v1/call can target a request-specific seller URL."""
+    seller_response = {"invoice_id": "INV-O", "amount": 100, "currency": "USD",
+                       "line_items": [{"description": "x", "quantity": 1, "unit_price": 100}]}
+
+    captured_url = []
+
+    with patch("gateway.app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+
+        async def capture_post(url, **kwargs):
+            captured_url.append(url)
+            mock_response = MagicMock()
+            mock_response.json.return_value = seller_response
+            mock_response.content = json.dumps(seller_response).encode()
+            mock_response.status_code = 200
+            return mock_response
+
+        mock_client.post = capture_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = client.post(
+            "/v1/call",
+            json={"seller_url": "http://override-seller:9000"},
+        )
+
+    assert resp.status_code == 200
+    assert len(captured_url) == 1
+    assert captured_url[0].startswith("http://override-seller:9000/seller/call")
+
+
 def test_demo_run_endpoint_exists():
     """POST /v1/demo/run is accessible when DEMO_MODE=true."""
     resp = client.post("/v1/demo/run", json={"modes": ["fast"]})

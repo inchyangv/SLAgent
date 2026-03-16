@@ -26,6 +26,12 @@ import sys
 import httpx
 
 from buyer_agent.client import BuyerAgent, BuyerResult, InvariantViolation, NegotiationResult
+from buyer_agent.loop import (
+    AutonomousBuyerLoop,
+    AutonomousLoopResult,
+    AutonomousRound,
+    AutonomousSellerTarget,
+)
 from gateway.app.demo_keys import inject_demo_env
 from shared.env import bootstrap_env
 
@@ -45,6 +51,11 @@ def _token_symbol() -> str:
     return os.getenv("SLA_TOKEN_SYMBOL", "USDT")
 
 
+def _format_amount(value: int) -> str:
+    token_symbol = _token_symbol()
+    return f"{value:>8} ({value / 1_000_000:.6f} {token_symbol})"
+
+
 def print_header() -> None:
     print("=" * 64)
     print("  SLAgent-402 — Autonomous Buyer Agent")
@@ -54,7 +65,6 @@ def print_header() -> None:
 
 def print_result(scenario: dict, result: BuyerResult) -> None:
     label = scenario["label"]
-    token_symbol = _token_symbol()
     print(f"\n{'─'*64}")
     print(f"  Scenario: {label} (mode={scenario['mode']})")
     print(f"  Expected: {scenario['expect']}")
@@ -68,12 +78,12 @@ def print_result(scenario: dict, result: BuyerResult) -> None:
     print(f"  latency_ms:        {result.metrics.get('latency_ms', '-')}")
     print(f"  ttft_ms:           {result.metrics.get('ttft_ms', '-')}")
     print(f"  validation_passed: {result.validation_passed}")
-    print(f"  payout:            {result.payout:>8} ({result.payout / 1_000_000:.6f} {token_symbol})")
-    print(f"  refund:            {result.refund:>8} ({result.refund / 1_000_000:.6f} {token_symbol})")
+    print(f"  payout:            {_format_amount(result.payout)}")
+    print(f"  refund:            {_format_amount(result.refund)}")
     print(f"  receipt_hash:      {result.receipt_hash[:24]}...")
     print(f"  tx_hash:           {result.tx_hash or 'mock (no chain)'}")
 
-    print(f"\n  Invariant Checks:")
+    print("\n  Invariant Checks:")
     for check in result.invariant_checks:
         status = "PASS" if check["passed"] else "FAIL"
         print(f"    [{status}] {check['name']}: {check['detail']}")
@@ -127,6 +137,41 @@ def print_summary(results: list[dict]) -> None:
     print()
 
 
+def print_autonomous_round(round_result: AutonomousRound) -> None:
+    latency_value = round_result.latency_ms if round_result.latency_ms is not None else "-"
+    print(f"\n{'─'*64}")
+    print(f"  Round {round_result.round_number}: {round_result.seller_id}")
+    print(f"{'─'*64}")
+    print(f"  seller_url:         {round_result.seller_url}")
+    print(f"  seller_score:       {round_result.seller_score:.2f}")
+    print(f"  request_id:         {round_result.request_id or '-'}")
+    print(f"  latency_ms:         {latency_value}")
+    print(f"  validation_passed:  {round_result.validation_passed}")
+    print(f"  payout:             {_format_amount(round_result.payout)}")
+    print(f"  refund:             {_format_amount(round_result.refund)}")
+    print(f"  budget_before:      {round_result.budget_before}")
+    print(f"  budget_after:       {round_result.budget_after}")
+    print(f"  disputed:           {round_result.disputed}")
+    if round_result.dispute_reasons:
+        print(f"  dispute_reasons:    {', '.join(round_result.dispute_reasons)}")
+    print(f"  status:             {round_result.status}")
+    if round_result.error:
+        print(f"  error:              {round_result.error}")
+
+
+def print_autonomous_summary(result: AutonomousLoopResult) -> None:
+    print(f"\n{'='*64}")
+    print("  AUTONOMOUS LOOP SUMMARY")
+    print(f"{'='*64}")
+    print(f"  Rounds completed:   {len(result.rounds)}")
+    print(f"  Budget initial:     {result.budget_initial}")
+    print(f"  Budget remaining:   {result.budget_remaining}")
+    print(f"  Sellers seen:       {', '.join(result.sellers_seen) if result.sellers_seen else '-'}")
+    print(f"  Disputes opened:    {result.disputes_opened}")
+    print(f"  Stop reason:        {result.stop_reason}")
+    print()
+
+
 def print_negotiation(neg: NegotiationResult) -> None:
     print(f"\n{'─'*64}")
     print("  NEGOTIATION PHASE")
@@ -141,6 +186,29 @@ def print_negotiation(neg: NegotiationResult) -> None:
     print(f"  Max price:         {neg.mandate.get('max_price', 'N/A')}")
     print(f"  Seller accepted:   {neg.seller_accepted}")
     print(f"  Summary:           {neg.summary}")
+
+
+def parse_seller_targets(raw: str | None, default_url: str) -> list[AutonomousSellerTarget]:
+    """Parse `url|mode|delay_ms|label` targets from CLI input."""
+    entries = [item.strip() for item in (raw.split(",") if raw else [default_url]) if item.strip()]
+    targets: list[AutonomousSellerTarget] = []
+
+    for entry in entries:
+        parts = [part.strip() for part in entry.split("|")]
+        seller_url = parts[0]
+        mode = parts[1] if len(parts) >= 2 and parts[1] else "fast"
+        delay_ms = int(parts[2]) if len(parts) >= 3 and parts[2] else 0
+        label = parts[3] if len(parts) >= 4 else ""
+        targets.append(
+            AutonomousSellerTarget(
+                seller_url=seller_url,
+                mode=mode,
+                delay_ms=delay_ms,
+                label=label,
+            )
+        )
+
+    return targets
 
 
 async def run_agent(
@@ -206,8 +274,25 @@ async def main_async(args: argparse.Namespace) -> int:
     print(f"  Seller:  {args.seller_url}")
     print(f"  Buyer:   {args.buyer_address}")
 
-    modes = args.modes.split(",") if args.modes else None
     buyer_key = args.buyer_private_key or os.getenv("BUYER_PRIVATE_KEY")
+
+    if args.autonomous:
+        seller_targets = parse_seller_targets(args.seller_urls, args.seller_url)
+        loop = AutonomousBuyerLoop(
+            gateway_url=args.gateway_url,
+            seller_targets=seller_targets,
+            buyer_address=args.buyer_address,
+            buyer_private_key=buyer_key,
+            budget_tokens=args.budget,
+            max_rounds=args.max_rounds,
+        )
+        loop_result = await loop.run()
+        for round_result in loop_result.rounds:
+            print_autonomous_round(round_result)
+        print_autonomous_summary(loop_result)
+        return 0 if loop_result.rounds else 1
+
+    modes = args.modes.split(",") if args.modes else None
     results = await run_agent(
         gateway_url=args.gateway_url,
         seller_url=args.seller_url,
@@ -247,6 +332,28 @@ def main() -> None:
         "--modes",
         default=None,
         help="Comma-separated modes to run (default: all — fast,slow,invalid)",
+    )
+    parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Run the budgeted autonomous loop instead of the fixed preset scenarios",
+    )
+    parser.add_argument(
+        "--seller-urls",
+        default=None,
+        help="Comma-separated sellers as url|mode|delay_ms|label entries for autonomous mode",
+    )
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=int(os.getenv("AUTONOMOUS_BUDGET", "1000000")),
+        help="Autonomous budget in token base units (default: 1000000)",
+    )
+    parser.add_argument(
+        "--max-rounds",
+        type=int,
+        default=int(os.getenv("AUTONOMOUS_MAX_ROUNDS", "10")),
+        help="Maximum autonomous rounds to execute (default: 10)",
     )
     args = parser.parse_args()
     sys.exit(asyncio.run(main_async(args)))

@@ -11,7 +11,6 @@ This module encapsulates the autonomous buyer's interaction with the SLAgent-402
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -84,6 +83,10 @@ class BuyerResult:
 class InvariantViolation(Exception):
     """Raised when a receipt invariant check fails (fail-closed)."""
 
+    def __init__(self, message: str, *, result: BuyerResult | None = None) -> None:
+        super().__init__(message)
+        self.result = result
+
 
 class BuyerAgent:
     """Autonomous buyer agent that interacts with SLAgent-402 gateway."""
@@ -104,10 +107,20 @@ class BuyerAgent:
         self.max_price = max_price
         self.timeout = timeout
         self.negotiation: NegotiationResult | None = None
+        self._registered_mandate_id: str | None = None
         self._buyer_w3: Web3 | None = None
         self._buyer_account: Any | None = None
         self._last_nonce: int | None = None
         self._wdk_wallet = WDKWallet.from_env(role="buyer", expected_address=buyer_address)
+
+    async def _register_mandate(self, mandate: dict[str, Any]) -> str | None:
+        """Best-effort mandate registration with the gateway."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(f"{self.gateway_url}/v1/mandates", json=mandate)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Gateway mandate register failed: {resp.status_code}")
+            data = resp.json()
+            return data.get("mandate_id", mandate.get("mandate_id"))
 
     async def discover_seller(self) -> dict[str, Any]:
         """Discover seller capabilities via GET /seller/capabilities."""
@@ -169,7 +182,11 @@ class BuyerAgent:
                 logger.info("LLM negotiation suggestion skipped: %s", e)
 
         # Verify seller supports required schema
-        required_schemas = {v["schema_id"] for v in mandate.get("validators", []) if "schema_id" in v}
+        required_schemas = {
+            v["schema_id"]
+            for v in mandate.get("validators", [])
+            if "schema_id" in v
+        }
         if not required_schemas.issubset(set(supported_schemas)):
             missing = required_schemas - set(supported_schemas)
             raise RuntimeError(f"Seller does not support required schemas: {missing}")
@@ -190,11 +207,19 @@ class BuyerAgent:
             accept_data = resp.json()
             accepted = accept_data.get("accepted", False)
 
+        self._registered_mandate_id = None
+        if accepted:
+            try:
+                self._registered_mandate_id = await self._register_mandate(mandate)
+            except Exception as exc:
+                logger.warning("Mandate registration skipped: %s", exc)
+
         summary = (
             f"Negotiation complete. "
             f"Seller={seller_address}, LLM={seller_capabilities.get('llm_model', 'unknown')}. "
             f"Mandate max_price={mandate['max_price']}, schemas={list(required_schemas)}. "
-            f"Seller accepted={accepted}."
+            f"Seller accepted={accepted}. "
+            f"Gateway mandate registered={bool(self._registered_mandate_id)}."
         )
 
         self.negotiation = NegotiationResult(
@@ -228,7 +253,10 @@ class BuyerAgent:
         if not self._buyer_w3 or not self._buyer_account:
             raise RuntimeError("buyer chain client not initialized")
 
-        chain_nonce = self._buyer_w3.eth.get_transaction_count(self._buyer_account.address, "pending")
+        chain_nonce = self._buyer_w3.eth.get_transaction_count(
+            self._buyer_account.address,
+            "pending",
+        )
         if self._last_nonce is None:
             nonce = chain_nonce
         else:
@@ -256,7 +284,10 @@ class BuyerAgent:
                     buyer_address=self.buyer_address,
                 )
             except Exception as exc:
-                logger.warning("WDK deposit path failed, falling back to local key signing: %s", exc)
+                logger.warning(
+                    "WDK deposit path failed, falling back to local key signing: %s",
+                    exc,
+                )
 
         if not self._init_buyer_chain():
             return None
@@ -311,6 +342,8 @@ class BuyerAgent:
         mode: str = "fast",
         delay_ms: int = 0,
         scenario_tag: str = "",
+        mandate_id: str | None = None,
+        seller_url: str | None = None,
     ) -> BuyerResult:
         """Execute the full buyer flow: deposit (optional) → call → verify.
 
@@ -326,11 +359,17 @@ class BuyerAgent:
         """
         max_price_int = int(self.max_price)
         request_id_hint = self._make_request_id(mode)
+        mandate_id_to_use = mandate_id or self._registered_mandate_id
+        seller_url_to_use = seller_url or self.seller_url
         call_body: dict = {
             "mode": mode,
             "request_id": request_id_hint,
             "buyer": self.buyer_address,
         }
+        if mandate_id_to_use:
+            call_body["mandate_id"] = mandate_id_to_use
+        if seller_url_to_use:
+            call_body["seller_url"] = seller_url_to_use
         if delay_ms > 0:
             call_body["delay_ms"] = delay_ms
         if scenario_tag:
@@ -441,7 +480,8 @@ class BuyerAgent:
 
         if violations:
             raise InvariantViolation(
-                f"Receipt for {request_id} failed {len(violations)} invariant(s): {violations}"
+                f"Receipt for {request_id} failed {len(violations)} invariant(s): {violations}",
+                result=result,
             )
 
         # Auto-submit attestations if buyer has a signing key

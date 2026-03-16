@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from statistics import mean
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,9 @@ def summarize_receipts(
         seller_id=seller_id,
         total_calls=len(relevant),
         success_rate=sum(1 for record in relevant if record.success) / len(relevant),
-        validation_pass_rate=sum(1 for record in relevant if record.validation_passed) / len(relevant),
+        validation_pass_rate=(
+            sum(1 for record in relevant if record.validation_passed) / len(relevant)
+        ),
         dispute_rate=sum(1 for record in relevant if record.disputed) / len(relevant),
         avg_latency_ms=mean(latencies) if latencies else None,
         avg_payout_ratio=mean(record.payout_ratio for record in relevant),
@@ -197,4 +199,3 @@ def _latency_score(avg_latency_ms: float | None, config: StrategyConfig) -> floa
     span = max(1, config.degraded_latency_ms - config.target_latency_ms)
     overshoot = avg_latency_ms - config.target_latency_ms
     return max(0.4, 1.0 - (overshoot / span))
-

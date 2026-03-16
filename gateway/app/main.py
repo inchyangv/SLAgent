@@ -377,6 +377,11 @@ async def call_endpoint(request: Request) -> JSONResponse:
         )
 
     seller_addr = mandate.get("seller") or settings.seller_address or settings.seller_upstream_url
+    seller_url = str(
+        request.query_params.get("seller_url")
+        or payload.get("seller_url")
+        or settings.seller_upstream_url
+    ).strip()
     event_store.record(
         kind="payment.verified",
         actor="gateway",
@@ -408,7 +413,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             seller_resp = await client.post(
-                f"{settings.seller_upstream_url}/seller/call?mode={mode}&delay_ms={int(delay_ms)}",
+                f"{seller_url}/seller/call?mode={mode}&delay_ms={int(delay_ms)}",
                 json=seller_payload,
             )
             rm.mark_first_token()

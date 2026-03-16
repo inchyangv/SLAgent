@@ -29,6 +29,7 @@ WARNING: Hackathon demo only — never use production keys!
 
 from __future__ import annotations
 
+import argparse
 import os
 import signal
 import subprocess
@@ -40,10 +41,10 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-import httpx
+import httpx  # noqa: E402
 
 # Inject demo keys before anything else
-from gateway.app.demo_keys import inject_demo_env
+from gateway.app.demo_keys import inject_demo_env  # noqa: E402
 
 demo_injected = inject_demo_env()
 
@@ -73,7 +74,36 @@ def wait_for_health(url: str, name: str, timeout: int = 15) -> bool:
     return False
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="SLAgent-402 one-command demo")
+    parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Run the autonomous buyer loop instead of the fixed three scenarios",
+    )
+    parser.add_argument(
+        "--seller-urls",
+        default=None,
+        help="Comma-separated sellers as url|mode|delay_ms|label entries for autonomous mode",
+    )
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=int(os.getenv("AUTONOMOUS_BUDGET", "1000000")),
+        help="Autonomous budget in token base units",
+    )
+    parser.add_argument(
+        "--max-rounds",
+        type=int,
+        default=int(os.getenv("AUTONOMOUS_MAX_ROUNDS", "10")),
+        help="Maximum autonomous rounds to execute",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
+
     print("=" * 64)
     print("  SLAgent-402 — One-Command Demo")
     print("  Pay by proof, not upfront.")
@@ -195,13 +225,33 @@ def main() -> int:
         print(f"{'='*64}")
 
         import asyncio
-        from buyer_agent.main import run_agent, print_header, print_result, print_summary
-        from buyer_agent.main import print_negotiation
+
         from buyer_agent.client import InvariantViolation
+        from buyer_agent.main import (
+            parse_seller_targets,
+            print_autonomous_round,
+            print_autonomous_summary,
+            print_negotiation,
+            print_result,
+            print_summary,
+        )
 
         buyer_key = os.getenv("BUYER_PRIVATE_KEY")
 
         async def run_demo():
+            if args.autonomous:
+                from buyer_agent.loop import AutonomousBuyerLoop
+
+                loop = AutonomousBuyerLoop(
+                    gateway_url=GATEWAY_URL,
+                    seller_targets=parse_seller_targets(args.seller_urls, SELLER_URL),
+                    buyer_address=os.getenv("BUYER_ADDRESS", "0xDEMO_BUYER"),
+                    buyer_private_key=buyer_key,
+                    budget_tokens=args.budget,
+                    max_rounds=args.max_rounds,
+                )
+                return await loop.run()
+
             from buyer_agent.client import BuyerAgent
 
             agent = BuyerAgent(
@@ -239,36 +289,53 @@ def main() -> int:
 
             return results
 
-        results = asyncio.run(run_demo())
-        print_summary(results)
+        demo_result = asyncio.run(run_demo())
+
+        if args.autonomous:
+            for round_result in demo_result.rounds:
+                print_autonomous_round(round_result)
+            print_autonomous_summary(demo_result)
+            results = demo_result.rounds
+        else:
+            print_summary(demo_result)
+            results = demo_result
 
         # Step 5: Final summary
         print(f"{'='*64}")
         print("  DEMO COMPLETE")
         print(f"{'='*64}")
 
-        success_count = sum(1 for r in results if r.get("result") and r["result"].success)
-        print(f"\n  Scenarios: {len(results)} total, {success_count} passed")
-
-        # Check attestation status
-        has_attestations = any(
-            r.get("result") and r["result"].attestation_status.get("status", {}).get("count", 0) > 0
-            for r in results
-            if r.get("result")
-        )
-        if has_attestations:
-            for r in results:
-                res = r.get("result")
-                if res and res.attestation_status:
-                    status = res.attestation_status.get("status", {})
-                    count = status.get("count", 0)
-                    complete = status.get("complete", False)
-                    parties = status.get("parties_signed", [])
-                    tag = "COMPLETE" if complete else f"{count}/3"
-                    print(f"  Attestations ({r['label']}): {tag} — {parties}")
+        if args.autonomous:
+            success_count = sum(1 for round_result in results if round_result.status == "success")
+            print(f"\n  Rounds: {len(results)} total, {success_count} successful")
+            print(f"  Disputes opened: {demo_result.disputes_opened}")
         else:
-            print("  Attestations: skipped (set DEMO_PRIVATE_KEY for signing)")
+            success_count = sum(1 for r in results if r.get("result") and r["result"].success)
+            print(f"\n  Scenarios: {len(results)} total, {success_count} passed")
 
+            has_attestations = any(
+                (
+                    r.get("result")
+                    and r["result"].attestation_status.get("status", {}).get("count", 0) > 0
+                )
+                for r in results
+                if r.get("result")
+            )
+            if has_attestations:
+                for r in results:
+                    res = r.get("result")
+                    if res and res.attestation_status:
+                        status = res.attestation_status.get("status", {})
+                        count = status.get("count", 0)
+                        complete = status.get("complete", False)
+                        parties = status.get("parties_signed", [])
+                        tag = "COMPLETE" if complete else f"{count}/3"
+                        print(f"  Attestations ({r['label']}): {tag} — {parties}")
+            else:
+                print("  Attestations: skipped (set DEMO_PRIVATE_KEY for signing)")
+
+        if args.autonomous:
+            print(f"  Stop reason: {demo_result.stop_reason}")
         print(f"\n  Dashboard: open dashboard/index.html (set gateway URL to {GATEWAY_URL})")
         print()
 
