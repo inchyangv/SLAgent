@@ -186,22 +186,24 @@ export function GNB() {
           {/* Network indicator */}
           <div className="hidden sm:flex items-center gap-1.5">
             <span
-              className="w-2 h-2 rounded-full inline-block"
+              className="w-2 h-2 rounded-full inline-block shrink-0"
               style={{
                 background: isConnected
                   ? isCorrectNetwork ? 'var(--color-success)' : 'var(--color-warning)'
-                  : 'var(--color-text-muted)',
+                  : 'var(--color-error)',
               }}
             />
             <span
               className="text-xs font-mono"
               style={{
-                color: !isCorrectNetwork && isConnected
-                  ? 'var(--color-warning)'
-                  : 'var(--color-text-secondary)',
+                color: !isConnected
+                  ? 'var(--color-error)'
+                  : !isCorrectNetwork
+                    ? 'var(--color-warning)'
+                    : 'var(--color-text-secondary)',
               }}
             >
-              {isConnected ? networkName : 'Sepolia'}
+              {isConnected ? networkName : 'Disconnected'}
             </span>
           </div>
 

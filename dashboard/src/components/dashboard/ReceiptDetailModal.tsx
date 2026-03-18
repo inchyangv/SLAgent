@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, ExternalLink } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Badge } from '../ui/Badge'
 import { formatCurrency, formatLatency, shortAddr, shortHash } from '../../lib/format'
+import { useNetwork, txExplorerUrl } from '../../hooks/useNetwork'
 import type { Receipt } from '../../types'
 
 interface ReceiptDetailModalProps {
@@ -44,8 +45,12 @@ function AttestRow({ role, signed, address }: { role: string; signed?: boolean; 
 export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps) {
   const [tab, setTab] = useState<Tab>('summary')
   const [copied, setCopied] = useState(false)
+  const { chainId } = useNetwork()
 
   if (!receipt) return null
+
+  const txHash = receipt.settlement?.tx_hash
+  const explorerUrl = txHash ? txExplorerUrl(chainId, txHash) : null
 
   const parties = receipt.attestations?.parties_signed ?? []
   const buyerSigned = parties.includes('buyer')
@@ -120,7 +125,25 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
             <KV label="Seller" value={shortAddr(receipt.seller)} mono />
             <KV label="Gateway" value={shortAddr(receipt.gateway)} mono />
             <KV label="Receipt Hash" value={shortHash(receipt.hashes?.receipt_hash)} mono />
-            <KV label="Tx Hash" value={shortHash(receipt.settlement?.tx_hash)} mono />
+            <KV
+              label="Tx Hash"
+              value={
+                txHash && explorerUrl ? (
+                  <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 font-mono transition-colors hover:underline"
+                    style={{ color: 'var(--color-accent)' }}
+                  >
+                    {shortHash(txHash)}
+                    <ExternalLink size={10} />
+                  </a>
+                ) : (
+                  shortHash(txHash)
+                )
+              }
+            />
             {(receipt.breach_reasons ?? receipt.pricing?.breach_reasons ?? []).length > 0 && (
               <div className="mt-3">
                 <div className="text-xs mb-2 uppercase tracking-wide" style={{ color: 'var(--color-error)' }}>
