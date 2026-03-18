@@ -62,7 +62,9 @@ export function AutopilotWidget() {
 
   const r = lastResult
   const llm = r?.llm_policy
-  const token = r?.receipt?.token_symbol ?? 'USDT'
+  const token = 'USDT'
+  const slaStatus = r ? (r.ok && r.validation_passed ? 'PASS' : 'BREACH') : null
+  const slaVariant = r ? (r.ok && r.validation_passed ? 'pass' : 'fail') : 'neutral'
 
   return (
     <Card>
@@ -149,16 +151,14 @@ export function AutopilotWidget() {
       </CardHeader>
       <CardBody>
         <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2">
-          <EvalCard label="Mode" value={r?.mode ?? '—'} />
+          <EvalCard label="Mode" value={currentPreset} />
           <EvalCard label="Last Request" value={shortId(r?.request_id)} mono />
           <EvalCard
             label="SLA Status"
             value={
-              r?.sla_status ? (
-                <Badge
-                  variant={r.sla_status as 'pass' | 'fail' | 'partial'}
-                >
-                  {r.sla_status.toUpperCase()}
+              slaStatus ? (
+                <Badge variant={slaVariant as 'pass' | 'fail' | 'neutral'}>
+                  {slaStatus}
                 </Badge>
               ) : (
                 '—'
@@ -167,7 +167,14 @@ export function AutopilotWidget() {
           />
           <EvalCard label="Payout" value={formatAmount(r?.payout, token)} mono />
           <EvalCard label="Refund" value={formatAmount(r?.refund, token)} mono />
-          <EvalCard label="LLM Judge" value={llm?.judge ?? '—'} />
+          <EvalCard
+            label="LLM Judge"
+            value={llm?.mode === 'llm' ? (
+              <Badge variant={llm.sla_pass ? 'pass' : 'fail'}>
+                {llm.sla_pass ? 'PASS' : 'FAIL'}
+              </Badge>
+            ) : '—'}
+          />
           <EvalCard label="LLM Model" value={llm?.model ?? '—'} />
           <EvalCard
             label="LLM Payout"

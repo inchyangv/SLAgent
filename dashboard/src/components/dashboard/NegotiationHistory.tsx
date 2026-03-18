@@ -1,10 +1,9 @@
-import React from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useEvents } from '../../hooks/useEvents'
 import { useMandates } from '../../hooks/useMandates'
 import { Card, CardHeader, CardTitle, CardBody } from '../ui/Card'
 import { Badge } from '../ui/Badge'
-import { formatAmount, relativeTime, shortId } from '../../lib/format'
+import { formatCurrency, shortId } from '../../lib/format'
 
 function KVRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -13,6 +12,12 @@ function KVRow({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-xs font-mono text-right" style={{ color: 'var(--color-text-primary)' }}>{value}</span>
     </div>
   )
+}
+
+function eventTime(ev: { ts?: number; ts_iso?: string }): string {
+  if (ev.ts_iso) return new Date(ev.ts_iso).toLocaleTimeString('en-US', { hour12: false })
+  if (ev.ts) return new Date(ev.ts * 1000).toLocaleTimeString('en-US', { hour12: false })
+  return '—'
 }
 
 export function NegotiationHistory() {
@@ -46,11 +51,28 @@ export function NegotiationHistory() {
             {latestMandate ? (
               <div className="text-xs">
                 <KVRow label="Mandate ID" value={shortId(latestMandate.mandate_id)} />
-                <KVRow label="Buyer" value={shortId(latestMandate.buyer_address)} />
-                <KVRow label="Seller" value={shortId(latestMandate.seller_address)} />
-                <KVRow label="Max Price" value={formatAmount(latestMandate.max_price, latestMandate.token_address ? 'USDT' : '')} />
-                <KVRow label="Schema" value={latestMandate.schema_id ?? latestMandate.request_schema ?? '—'} />
-                <KVRow label="Valid Until" value={relativeTime(latestMandate.valid_until)} />
+                <KVRow label="Buyer" value={shortId(latestMandate.buyer)} />
+                <KVRow label="Seller" value={shortId(latestMandate.seller)} />
+                <KVRow label="Max Price" value={formatCurrency(latestMandate.max_price, 'USDT')} />
+                <KVRow label="Base Pay" value={formatCurrency(latestMandate.base_pay, 'USDT')} />
+                <KVRow label="Timeout" value={latestMandate.timeout_ms ? `${latestMandate.timeout_ms}ms` : '—'} />
+                {latestMandate.validators && latestMandate.validators.length > 0 && (
+                  <KVRow
+                    label="Validators"
+                    value={latestMandate.validators.map((v) => `${v.type}${v.schema_id ? `:${v.schema_id}` : ''}`).join(', ')}
+                  />
+                )}
+                {latestMandate.bonus_rules?.tiers && latestMandate.bonus_rules.tiers.length > 0 && (
+                  <KVRow
+                    label="Tiers"
+                    value={latestMandate.bonus_rules.tiers
+                      .map((t) => `≤${t.lte_ms}ms:${formatCurrency(t.payout, 'USDT')}`)
+                      .join(' | ')}
+                  />
+                )}
+                {latestMandate.expires_at && (
+                  <KVRow label="Expires" value={latestMandate.expires_at} />
+                )}
               </div>
             ) : (
               <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
@@ -72,17 +94,19 @@ export function NegotiationHistory() {
               ) : (
                 negEvents.slice(0, 20).map((ev, i) => (
                   <div
-                    key={ev.id ?? i}
+                    key={i}
                     className="flex items-start gap-2 py-1 border-b last:border-0 text-xs"
                     style={{ borderColor: 'var(--color-border-subtle)' }}
                   >
                     <Badge variant="info" className="shrink-0">{ev.kind}</Badge>
                     <span className="font-mono truncate flex-1" style={{ color: 'var(--color-text-secondary)' }}>
                       {ev.mandate_id ? shortId(ev.mandate_id) : ev.request_id ? shortId(ev.request_id) : ''}
-                      {ev.summary ? ` — ${ev.summary}` : ''}
+                      {ev.data && Object.keys(ev.data).length > 0
+                        ? ` | ${Object.entries(ev.data).slice(0, 2).map(([k, v]) => `${k}=${String(v)}`).join(' ')}`
+                        : ''}
                     </span>
-                    <span className="shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                      {relativeTime(ev.timestamp ?? ev.created_at)}
+                    <span className="shrink-0 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                      {eventTime(ev)}
                     </span>
                   </div>
                 ))

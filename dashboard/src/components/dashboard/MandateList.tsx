@@ -3,9 +3,8 @@ import { RefreshCw } from 'lucide-react'
 import { useMandates } from '../../hooks/useMandates'
 import { Card, CardHeader, CardTitle, CardBody } from '../ui/Card'
 import { Modal } from '../ui/Modal'
-import { Button } from '../ui/Button'
 import { Skeleton } from '../ui/Skeleton'
-import { formatAmount, shortId, relativeTime } from '../../lib/format'
+import { formatAmount, shortId } from '../../lib/format'
 import type { Mandate } from '../../types'
 
 export function MandateList() {
@@ -50,9 +49,9 @@ export function MandateList() {
                   <span className="text-xs font-mono" style={{ color: 'var(--color-text-primary)' }}>
                     {formatAmount(m.max_price, 'USDT')}
                   </span>
-                  {m.valid_until && (
+                  {m.expires_at && (
                     <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                      {relativeTime(m.valid_until)}
+                      exp: {new Date(m.expires_at).toLocaleDateString()}
                     </span>
                   )}
                 </div>

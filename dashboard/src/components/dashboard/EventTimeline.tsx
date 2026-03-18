@@ -17,9 +17,15 @@ function kindVariant(kind: string): 'pass' | 'fail' | 'warning' | 'info' | 'neut
   return 'neutral'
 }
 
-function EventRow({ event }: { event: Event }) {
-  const payload = event.data ?? event.payload ?? {}
+function EventRow({ event, idx }: { event: Event; idx: number }) {
+  const payload = event.data ?? {}
   const entries = Object.entries(payload).slice(0, 6)
+  // ts is unix, ts_iso is ISO string
+  const tsDisplay = event.ts_iso
+    ? new Date(event.ts_iso).toLocaleTimeString('en-US', { hour12: false })
+    : event.ts
+      ? new Date(event.ts * 1000).toLocaleTimeString('en-US', { hour12: false })
+      : '—'
 
   return (
     <div
@@ -33,8 +39,8 @@ function EventRow({ event }: { event: Event }) {
             {event.request_id ? shortId(event.request_id) : shortId(event.mandate_id)}
           </span>
         )}
-        <span className="ml-auto shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-          {formatDate(event.timestamp ?? event.created_at)}
+        <span className="ml-auto shrink-0 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+          {tsDisplay}
         </span>
       </div>
       {entries.length > 0 && (
@@ -46,11 +52,6 @@ function EventRow({ event }: { event: Event }) {
               <span className="font-mono">{String(v)}</span>
             </span>
           ))}
-        </div>
-      )}
-      {event.summary && (
-        <div className="mt-0.5 pl-1" style={{ color: 'var(--color-text-secondary)' }}>
-          {event.summary}
         </div>
       )}
     </div>
@@ -174,7 +175,7 @@ export function EventTimeline() {
               No events
             </div>
           ) : (
-            filtered.map((ev, i) => <EventRow key={ev.id ?? i} event={ev} />)
+            filtered.map((ev, i) => <EventRow key={i} event={ev} idx={i} />)
           )}
         </div>
       </CardBody>

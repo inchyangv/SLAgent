@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import { useReceipts } from '../hooks/useReceipts'
 import { StatCard } from '../components/ui/StatCard'
 import { ReceiptsTable } from '../components/dashboard/ReceiptsTable'
@@ -9,18 +9,15 @@ export function ReceiptsPage() {
 
   const stats = useMemo(() => {
     const total = receipts.length
-    const pass = receipts.filter((r) => r.sla_status === 'pass').length
-    const fail = receipts.filter((r) => r.sla_status === 'fail').length
-    const token = receipts[0]?.token_symbol ?? 'USDT'
+    const pass = receipts.filter((r) => r.validation?.overall_pass).length
+    const fail = total - pass
 
     const totalPayout = receipts.reduce((acc, r) => {
-      const v = typeof r.seller_payout === 'string'
-        ? parseFloat(r.seller_payout)
-        : (r.seller_payout ?? 0)
-      return acc + (isNaN(v as number) ? 0 : (v as number))
+      const v = parseInt(r.pricing?.computed_payout ?? '0', 10)
+      return acc + (isNaN(v) ? 0 : v)
     }, 0)
 
-    return { total, pass, fail, totalPayout, token }
+    return { total, pass, fail, totalPayout }
   }, [receipts])
 
   return (
@@ -39,7 +36,7 @@ export function ReceiptsPage() {
         <StatCard label="Fail" value={stats.fail} variant="error" />
         <StatCard
           label="Total Payout"
-          value={formatAmountShort(stats.totalPayout, stats.token)}
+          value={formatAmountShort(stats.totalPayout, 'USDT')}
           variant="accent"
         />
       </div>

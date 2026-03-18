@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Copy, Check } from 'lucide-react'
 import { Modal } from '../ui/Modal'
-import { Badge, slaStatusVariant } from '../ui/Badge'
-import { formatAmount, formatLatency, shortAddr, shortHash, relativeTime } from '../../lib/format'
+import { Badge } from '../ui/Badge'
+import { formatCurrency, formatLatency, shortAddr, shortHash } from '../../lib/format'
 import type { Receipt } from '../../types'
 
 interface ReceiptDetailModalProps {
@@ -11,6 +11,8 @@ interface ReceiptDetailModalProps {
 }
 
 type Tab = 'summary' | 'attestations' | 'llm' | 'raw'
+
+const TOKEN = 'USDT'
 
 function KV({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
@@ -45,11 +47,13 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
 
   if (!receipt) return null
 
-  const token = receipt.token_symbol ?? 'USDT'
+  const parties = receipt.attestations?.parties_signed ?? []
+  const buyerSigned = parties.includes('buyer')
+  const sellerSigned = parties.includes('seller')
+  const gatewaySigned = parties.includes('gateway')
 
-  const buyerSigned = receipt.attestations?.buyer?.signed ?? receipt.buyer_attested
-  const sellerSigned = receipt.attestations?.seller?.signed ?? receipt.seller_attested
-  const gatewaySigned = receipt.attestations?.gateway?.signed ?? receipt.gateway_attested
+  const vpass = receipt.validation?.overall_pass
+  const llmPolicy = receipt.outcome?.llm_policy
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'summary', label: 'Summary' },
@@ -72,12 +76,12 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-3 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+            className="px-3 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors"
+            style={
               tab === key
-                ? 'border-[--color-accent] text-[--color-accent]'
-                : 'border-transparent text-[--color-text-secondary] hover:text-[--color-text-primary]'
-            }`}
-            style={tab === key ? { borderColor: 'var(--color-accent)', color: 'var(--color-accent)' } : { borderColor: 'transparent', color: 'var(--color-text-secondary)' }}
+                ? { borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }
+                : { borderColor: 'transparent', color: 'var(--color-text-secondary)' }
+            }
           >
             {label}
           </button>
@@ -85,52 +89,85 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
       </div>
 
       {/* Tab content */}
-      <div className="p-4">
+      <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 120px)' }}>
         {tab === 'summary' && (
           <div>
             <KV label="Request ID" value={receipt.request_id} mono />
-            <KV label="Mandate ID" value={receipt.mandate_id} mono />
-            <KV label="SLA Status" value={<Badge variant={slaStatusVariant(receipt.sla_status)}>{receipt.sla_status?.toUpperCase()}</Badge>} />
-            <KV label="Valid" value={<Badge variant={receipt.valid ? 'pass' : 'fail'}>{receipt.valid ? 'YES' : 'NO'}</Badge>} />
-            <KV label="Latency" value={formatLatency(receipt.latency_ms)} mono />
-            <KV label="Payout Rule" value={receipt.payout_rule ?? '—'} mono />
-            <KV label="Gross Amount" value={formatAmount(receipt.gross_amount, token)} mono />
-            <KV label="Seller Payout" value={formatAmount(receipt.seller_payout, token)} mono />
-            <KV label="Buyer Refund" value={formatAmount(receipt.buyer_refund, token)} mono />
-            <KV label="Buyer" value={shortAddr(receipt.buyer_address)} mono />
-            <KV label="Seller" value={shortAddr(receipt.seller_address)} mono />
-            <KV label="Tx Hash" value={shortHash(receipt.tx_hash)} mono />
-            <KV label="Receipt Hash" value={shortHash(receipt.receipt_hash)} mono />
-            <KV label="Created" value={relativeTime(receipt.created_at)} />
+            <KV label="Mandate ID" value={receipt.mandate_id ?? '—'} mono />
+            <KV
+              label="SLA Status"
+              value={
+                <Badge variant={vpass ? 'pass' : 'fail'}>
+                  {vpass ? 'PASS' : 'FAIL'}
+                </Badge>
+              }
+            />
+            <KV
+              label="Outcome"
+              value={
+                <Badge variant={receipt.outcome?.success ? 'pass' : 'fail'}>
+                  {receipt.outcome?.success ? 'SUCCESS' : (receipt.outcome?.error_code ?? 'FAIL')}
+                </Badge>
+              }
+            />
+            <KV label="Latency" value={formatLatency(receipt.metrics?.latency_ms)} mono />
+            <KV label="TTFT" value={formatLatency(receipt.metrics?.ttft_ms)} mono />
+            <KV label="Max Price" value={formatCurrency(receipt.pricing?.max_price, TOKEN)} mono />
+            <KV label="Seller Payout" value={formatCurrency(receipt.pricing?.computed_payout, TOKEN)} mono />
+            <KV label="Buyer Refund" value={formatCurrency(receipt.pricing?.computed_refund, TOKEN)} mono />
+            <KV label="Rule Applied" value={receipt.pricing?.rule_applied ?? '—'} mono />
+            <KV label="Buyer" value={shortAddr(receipt.buyer)} mono />
+            <KV label="Seller" value={shortAddr(receipt.seller)} mono />
+            <KV label="Gateway" value={shortAddr(receipt.gateway)} mono />
+            <KV label="Receipt Hash" value={shortHash(receipt.hashes?.receipt_hash)} mono />
+            <KV label="Tx Hash" value={shortHash(receipt.settlement?.tx_hash)} mono />
+            {(receipt.breach_reasons ?? receipt.pricing?.breach_reasons ?? []).length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs mb-2 uppercase tracking-wide" style={{ color: 'var(--color-error)' }}>
+                  SLA Breaches
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {(receipt.breach_reasons ?? receipt.pricing?.breach_reasons ?? []).map((b, i) => (
+                    <Badge key={i} variant="fail">{String(b).replace('BREACH_', '')}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {tab === 'attestations' && (
           <div>
-            <AttestRow
-              role="buyer"
-              signed={buyerSigned}
-              address={receipt.attestations?.buyer?.signer ?? receipt.buyer_address}
-            />
-            <AttestRow
-              role="seller"
-              signed={sellerSigned}
-              address={receipt.attestations?.seller?.signer ?? receipt.seller_address}
-            />
-            <AttestRow
-              role="gateway"
-              signed={gatewaySigned}
-              address={receipt.attestations?.gateway?.signer ?? receipt.gateway_address}
-            />
-            {receipt.validations && receipt.validations.length > 0 && (
+            <AttestRow role="buyer" signed={buyerSigned} address={receipt.buyer} />
+            <AttestRow role="seller" signed={sellerSigned} address={receipt.seller} />
+            <AttestRow role="gateway" signed={gatewaySigned} address={receipt.gateway} />
+
+            <div className="mt-3">
+              <KV
+                label="All Verified"
+                value={
+                  <Badge variant={receipt.attestations?.all_verified ? 'pass' : 'fail'}>
+                    {receipt.attestations?.all_verified ? 'YES' : 'NO'}
+                  </Badge>
+                }
+              />
+            </div>
+
+            {receipt.validation?.results && receipt.validation.results.length > 0 && (
               <div className="mt-4">
                 <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                   Validation Results
                 </div>
-                {receipt.validations.map((v, i) => (
-                  <div key={i} className="flex items-center justify-between py-1.5 border-b last:border-0 text-xs" style={{ borderColor: 'var(--color-border-subtle)' }}>
-                    <span style={{ color: 'var(--color-text-secondary)' }}>{v.validator}</span>
-                    <Badge variant={v.passed ? 'pass' : 'fail'}>{v.passed ? 'PASS' : 'FAIL'}</Badge>
+                {receipt.validation.results.map((v, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between py-1.5 border-b last:border-0 text-xs"
+                    style={{ borderColor: 'var(--color-border-subtle)' }}
+                  >
+                    <span style={{ color: 'var(--color-text-secondary)' }}>
+                      {v.type ?? '—'}{v.schema_id ? `:${v.schema_id}` : ''}
+                    </span>
+                    <Badge variant={v.pass ? 'pass' : 'fail'}>{v.pass ? 'PASS' : 'FAIL'}</Badge>
                   </div>
                 ))}
               </div>
@@ -140,32 +177,55 @@ export function ReceiptDetailModal({ receipt, onClose }: ReceiptDetailModalProps
 
         {tab === 'llm' && (
           <div>
-            {receipt.llm_policy ? (
+            {llmPolicy?.mode === 'llm' ? (
               <>
-                <KV label="Judge" value={receipt.llm_policy.judge} />
-                <KV label="Model" value={receipt.llm_policy.model} mono />
-                <KV label="Passed" value={<Badge variant={receipt.llm_policy.passed ? 'pass' : 'fail'}>{receipt.llm_policy.passed ? 'PASS' : 'FAIL'}</Badge>} />
-                <KV label="Confidence" value={`${(receipt.llm_policy.confidence * 100).toFixed(1)}%`} mono />
-                <KV label="Payout Ratio" value={`${(receipt.llm_policy.payout_ratio * 100).toFixed(1)}%`} mono />
-                <KV label="Recommended Payout" value={formatAmount(receipt.llm_policy.recommended_payout, token)} mono />
-                <div className="mt-3">
-                  <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>Reason</div>
-                  <div
-                    className="text-xs p-3 rounded border"
-                    style={{
-                      background: 'var(--color-bg-primary)',
-                      borderColor: 'var(--color-border)',
-                      color: 'var(--color-text-secondary)',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    {receipt.llm_policy.reason}
+                <KV label="Mode" value={llmPolicy.mode} mono />
+                <KV label="Model" value={llmPolicy.model ?? '—'} mono />
+                <KV
+                  label="Judgment"
+                  value={
+                    <Badge variant={llmPolicy.sla_pass ? 'pass' : 'fail'}>
+                      {llmPolicy.sla_pass ? 'PASS' : 'FAIL'}
+                    </Badge>
+                  }
+                />
+                <KV
+                  label="Confidence"
+                  value={
+                    llmPolicy.confidence !== undefined
+                      ? `${(llmPolicy.confidence * 100).toFixed(1)}%`
+                      : '—'
+                  }
+                  mono
+                />
+                <KV
+                  label="Recommended Payout"
+                  value={formatCurrency(llmPolicy.recommended_payout, TOKEN)}
+                  mono
+                />
+                {llmPolicy.reason && (
+                  <div className="mt-3">
+                    <div className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                      Reason
+                    </div>
+                    <div
+                      className="text-xs p-3 rounded border"
+                      style={{
+                        background: 'var(--color-bg-primary)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-secondary)',
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {llmPolicy.reason}
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             ) : (
               <div className="text-xs py-4 text-center" style={{ color: 'var(--color-text-muted)' }}>
-                No LLM policy data
+                <div className="text-lg mb-2">⚖️</div>
+                LLM Policy not active for this receipt
               </div>
             )}
           </div>

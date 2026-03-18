@@ -1,10 +1,10 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardBody } from '../ui/Card'
-import { Badge, slaStatusVariant } from '../ui/Badge'
+import { Badge } from '../ui/Badge'
 import { Skeleton } from '../ui/Skeleton'
 import { ReceiptDetailModal } from './ReceiptDetailModal'
-import { formatAmount, formatLatency, shortId, shortHash } from '../../lib/format'
+import { formatCurrency, formatLatency, shortId, shortHash } from '../../lib/format'
 import type { Receipt } from '../../types'
 
 type FilterTab = 'all' | 'pass' | 'fail'
@@ -15,23 +15,26 @@ interface ReceiptsTableProps {
   onRefresh: () => void
 }
 
+const TOKEN = 'USDT'
+
 export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableProps) {
   const [filter, setFilter] = useState<FilterTab>('all')
   const [selected, setSelected] = useState<Receipt | null>(null)
 
   const filtered = receipts.filter((r) => {
-    if (filter === 'pass') return r.sla_status === 'pass'
-    if (filter === 'fail') return r.sla_status === 'fail'
+    if (filter === 'pass') return r.validation?.overall_pass
+    if (filter === 'fail') return !r.validation?.overall_pass
     return true
   })
 
-  const tabs: { key: FilterTab; label: string }[] = [
-    { key: 'all', label: `All (${receipts.length})` },
-    { key: 'pass', label: `Pass (${receipts.filter((r) => r.sla_status === 'pass').length})` },
-    { key: 'fail', label: `Fail (${receipts.filter((r) => r.sla_status === 'fail').length})` },
-  ]
+  const passCount = receipts.filter((r) => r.validation?.overall_pass).length
+  const failCount = receipts.length - passCount
 
-  const token = receipts[0]?.token_symbol ?? 'USDT'
+  const tabs: { key: FilterTab; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: receipts.length },
+    { key: 'pass', label: 'Pass', count: passCount },
+    { key: 'fail', label: 'Fail', count: failCount },
+  ]
 
   return (
     <Card>
@@ -39,17 +42,18 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
         <div className="flex items-center gap-3">
           <CardTitle>Receipts</CardTitle>
           <div className="flex gap-1">
-            {tabs.map(({ key, label }) => (
+            {tabs.map(({ key, label, count }) => (
               <button
                 key={key}
                 onClick={() => setFilter(key)}
                 className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${
                   filter === key
                     ? 'bg-blue-900 text-blue-300'
-                    : 'text-zinc-500 hover:text-zinc-300'
+                    : 'hover:text-zinc-300'
                 }`}
+                style={filter !== key ? { color: 'var(--color-text-muted)' } : undefined}
               >
-                {label}
+                {label} ({count})
               </button>
             ))}
           </div>
@@ -58,10 +62,12 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
           onClick={onRefresh}
           className="p-1 rounded hover:bg-zinc-800 transition-colors"
           style={{ color: 'var(--color-text-muted)' }}
+          title="Refresh"
         >
           <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </CardHeader>
+
       <CardBody className="p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -73,8 +79,8 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
                 ].map((h) => (
                   <th
                     key={h}
-                    className="px-3 py-2 text-left font-medium uppercase tracking-wide whitespace-nowrap"
-                    style={{ color: 'var(--color-text-muted)' }}
+                    className="px-3 py-2 text-left font-semibold uppercase tracking-wide whitespace-nowrap"
+                    style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}
                   >
                     {h}
                   </th>
@@ -92,89 +98,148 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
                       ))}
                     </tr>
                   ))
-                : filtered.slice(0, 50).map((r, i) => {
-                    const buyerSigned = r.attestations?.buyer?.signed ?? r.buyer_attested
-                    const sellerSigned = r.attestations?.seller?.signed ?? r.seller_attested
-                    const gatewaySigned = r.attestations?.gateway?.signed ?? r.gateway_attested
-                    const attestCount = [buyerSigned, sellerSigned, gatewaySigned].filter(Boolean).length
-                    const breachCount = r.validations?.filter((v) => !v.passed).length ?? 0
+                : filtered.map((r, i) => {
+                    const vpass = r.validation?.overall_pass
+                    const payout = r.pricing?.computed_payout ?? '0'
+                    const refund = r.pricing?.computed_refund ?? '0'
+                    const maxP = parseInt(r.pricing?.max_price ?? '0', 10)
+                    const payoutInt = parseInt(payout, 10)
+                    const latency = r.metrics?.latency_ms
+                    const rule = r.pricing?.rule_applied
+                    const hash = r.hashes?.receipt_hash ?? r.settlement?.tx_hash
+                    const parties = r.attestations?.parties_signed ?? []
+                    const attestComplete = r.attestations?.complete
+                    const breaches = r.breach_reasons ?? r.pricing?.breach_reasons ?? []
+                    const llmPolicy = r.outcome?.llm_policy
+                    const llmActive = llmPolicy?.mode === 'llm'
+
+                    // Payout badge variant
+                    let payBadge: 'full' | 'partial' | 'fail' = 'fail'
+                    if (payoutInt === maxP && maxP > 0) payBadge = 'full'
+                    else if (payoutInt > 0) payBadge = 'partial'
 
                     return (
                       <tr
                         key={r.request_id ?? i}
-                        className="border-b cursor-pointer hover:bg-zinc-900 transition-colors"
+                        className="border-b cursor-pointer transition-colors"
                         style={{ borderColor: 'var(--color-border-subtle)' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--color-bg-elevated)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = ''
+                        }}
                         onClick={() => setSelected(r)}
                       >
-                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+                        <td
+                          className="px-3 py-2 font-mono"
+                          style={{ color: 'var(--color-text-secondary)', fontSize: '11px' }}
+                          title={r.request_id}
+                        >
                           {shortId(r.request_id)}
                         </td>
                         <td className="px-3 py-2 font-mono whitespace-nowrap">
-                          {formatLatency(r.latency_ms)}
+                          {formatLatency(latency)}
                         </td>
                         <td className="px-3 py-2">
-                          <Badge variant={r.sla_status === 'pass' ? 'pass' : r.sla_status === 'fail' ? 'fail' : 'partial'}>
-                            {r.sla_status?.toUpperCase() ?? '—'}
+                          <Badge variant={vpass ? 'pass' : 'fail'}>
+                            {vpass ? 'PASS' : 'FAIL'}
                           </Badge>
                         </td>
                         <td className="px-3 py-2 font-mono whitespace-nowrap">
-                          {formatAmount(r.seller_payout, token)}
+                          <Badge variant={payBadge}>
+                            {formatCurrency(payout, TOKEN)}
+                          </Badge>
                         </td>
-                        <td className="px-3 py-2 font-mono whitespace-nowrap">
-                          {formatAmount(r.buyer_refund, token)}
+                        <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: 'var(--color-text-secondary)' }}>
+                          {formatCurrency(refund, TOKEN)}
                         </td>
-                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--color-text-muted)' }}>
-                          {r.payout_rule ?? '—'}
-                        </td>
-                        <td className="px-3 py-2">
-                          {r.llm_policy ? (
-                            <Badge variant={r.llm_policy.passed ? 'pass' : 'fail'}>
-                              {r.llm_policy.passed ? 'PASS' : 'FAIL'}
-                            </Badge>
-                          ) : '—'}
+                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>
+                          {rule ?? '—'}
                         </td>
                         <td className="px-3 py-2">
-                          {breachCount > 0 ? (
-                            <Badge variant="fail">{breachCount}</Badge>
+                          {llmActive ? (
+                            <div className="flex items-center gap-1">
+                              <Badge variant={llmPolicy.sla_pass ? 'pass' : 'fail'}>
+                                {llmPolicy.sla_pass ? 'PASS' : 'FAIL'}
+                              </Badge>
+                              {llmPolicy.confidence !== undefined && (
+                                <span className="font-mono" style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>
+                                  {(llmPolicy.confidence * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
                           ) : (
-                            <span style={{ color: 'var(--color-text-muted)' }}>0</span>
+                            <span style={{ color: 'var(--color-text-muted)' }}>—</span>
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex gap-0.5">
-                            {['B', 'S', 'G'].map((role, idx) => {
-                              const signed = [buyerSigned, sellerSigned, gatewaySigned][idx]
+                          {breaches.length > 0 ? (
+                            <div className="flex flex-wrap gap-0.5">
+                              {breaches.map((b, bi) => (
+                                <Badge key={bi} variant="fail" className="text-xs">
+                                  {String(b).replace('BREACH_', '')}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-0.5">
+                            {(['buyer', 'seller', 'gateway'] as const).map((role, idx) => {
+                              const signed = parties.includes(role)
                               return (
                                 <span
                                   key={role}
-                                  className="w-4 h-4 rounded-sm text-xs flex items-center justify-center font-mono"
+                                  className="w-4 h-4 rounded-sm flex items-center justify-center font-mono"
                                   style={{
                                     background: signed ? 'var(--color-success)' : 'var(--color-border)',
                                     color: signed ? '#fff' : 'var(--color-text-muted)',
                                     fontSize: 9,
                                   }}
-                                  title={`${['buyer', 'seller', 'gateway'][idx]}: ${signed ? 'signed' : 'missing'}`}
+                                  title={`${role}: ${signed ? 'signed' : 'missing'}`}
                                 >
-                                  {role}
+                                  {['B', 'S', 'G'][idx]}
                                 </span>
                               )
                             })}
-                            <span className="ml-1 font-mono" style={{ color: attestCount === 3 ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                              {attestCount}/3
+                            <span
+                              className="ml-1 font-mono text-xs"
+                              style={{
+                                color: attestComplete ? 'var(--color-success)' : 'var(--color-text-muted)',
+                              }}
+                            >
+                              {parties.length}/3
                             </span>
                           </div>
                         </td>
-                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--color-text-muted)' }}>
-                          {shortHash(r.receipt_hash ?? r.tx_hash)}
+                        <td
+                          className="px-3 py-2 font-mono"
+                          style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}
+                          title={hash}
+                        >
+                          {shortHash(hash)}
                         </td>
                       </tr>
                     )
                   })}
             </tbody>
           </table>
+
           {!isLoading && filtered.length === 0 && (
-            <div className="text-xs py-8 text-center" style={{ color: 'var(--color-text-muted)' }}>
-              No receipts
+            <div
+              className="py-12 text-center"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              <div className="text-2xl mb-2">📋</div>
+              <div className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                No receipts yet
+              </div>
+              <div className="text-xs">
+                Run the SLA Evaluator to generate receipts
+              </div>
             </div>
           )}
         </div>

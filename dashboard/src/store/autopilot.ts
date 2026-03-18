@@ -3,7 +3,7 @@ import { runDemo } from '../api'
 import { useSettingsStore } from './settings'
 import { useLogStore } from './log'
 import { useToastStore } from './toast'
-import { PRESETS } from '../types'
+import { SIM_PRESETS } from '../types'
 import type { DemoRunResult } from '../types'
 
 interface AutopilotState {
@@ -32,7 +32,13 @@ export const useAutopilotStore = create<AutopilotState>()((set, get) => ({
 
     if (!get().isRunning) return
 
-    const preset = PRESETS[currentPreset]
+    const presetCfg = SIM_PRESETS[currentPreset]
+    const preset = {
+      modes: [presetCfg.autopilot_mode],
+      scenario: currentPreset,
+      delay_ms: presetCfg.delay_ms,
+      simulator: presetCfg.simulator,
+    }
     try {
       const res = await runDemo(gatewayUrl, {
         ...preset,
@@ -42,7 +48,7 @@ export const useAutopilotStore = create<AutopilotState>()((set, get) => ({
       const result = res.results?.[0] ?? null
       set((s) => ({ lastResult: result, tickCount: s.tickCount + 1 }))
       if (result) {
-        const status = result.sla_status ?? (result.valid ? 'pass' : 'fail')
+        const status = result.ok && result.validation_passed ? 'pass' : 'fail'
         addLog(
           `[tick] ${status.toUpperCase()} | req=${result.request_id?.slice(0, 8) ?? '—'} | latency=${result.latency_ms ?? '—'}ms`,
           status === 'pass' ? 'ok' : status === 'fail' ? 'err' : 'info',
