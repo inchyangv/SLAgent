@@ -11,6 +11,13 @@ interface SettingsState {
   setAutopilotInterval: (n: number) => void
   currentPreset: SimPreset
   setPreset: (p: SimPreset) => void
+  // Polling intervals (seconds)
+  balancePollInterval: number
+  receiptPollInterval: number
+  eventPollInterval: number
+  setBalancePollInterval: (n: number) => void
+  setReceiptPollInterval: (n: number) => void
+  setEventPollInterval: (n: number) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -24,6 +31,13 @@ export const useSettingsStore = create<SettingsState>()(
       setAutopilotInterval: (n) => set({ autopilotInterval: n }),
       currentPreset: 'happy',
       setPreset: (p) => set({ currentPreset: p }),
+      // Polling defaults
+      balancePollInterval: 10,
+      receiptPollInterval: 5,
+      eventPollInterval: 3,
+      setBalancePollInterval: (n) => set({ balancePollInterval: n }),
+      setReceiptPollInterval: (n) => set({ receiptPollInterval: n }),
+      setEventPollInterval: (n) => set({ eventPollInterval: n }),
     }),
     {
       name: 'slagent-402-settings',

@@ -15,6 +15,28 @@ const presetDesc: Record<SimPreset, string> = {
   breaches: 'Invalid mode, schema fail + upstream error',
 }
 
+function NumberInput({ label, value, onChange, min = 1, max = 120, unit = 's' }: {
+  label: string; value: number; onChange: (n: number) => void; min?: number; max?: number; unit?: string
+}) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <label className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={value}
+          onChange={(e) => onChange(Math.max(min, Math.min(max, parseInt(e.target.value) || min)))}
+          className="w-20 px-2 py-1 rounded text-xs font-mono border text-center"
+          style={{ background: 'var(--color-bg-elevated)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+        />
+        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{unit}</span>
+      </div>
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const store = useSettingsStore()
   const addToast = useToastStore((s) => s.addToast)
@@ -23,33 +45,39 @@ export function SettingsPage() {
   const [sellerUrl, setSellerUrl] = useState(store.sellerUrl)
   const [interval, setInterval] = useState(store.autopilotInterval)
   const [preset, setPreset] = useState<SimPreset>(store.currentPreset)
+  const [balancePoll, setBalancePoll] = useState(store.balancePollInterval)
+  const [receiptPoll, setReceiptPoll] = useState(store.receiptPollInterval)
+  const [eventPoll, setEventPoll] = useState(store.eventPollInterval)
 
   function handleSave() {
     store.setGatewayUrl(gatewayUrl)
     store.setSellerUrl(sellerUrl)
     store.setAutopilotInterval(interval)
     store.setPreset(preset)
+    store.setBalancePollInterval(balancePoll)
+    store.setReceiptPollInterval(receiptPoll)
+    store.setEventPollInterval(eventPoll)
     addToast('Settings saved', 'success')
   }
 
   function handleReset() {
-    const defaults = {
-      gatewayUrl: 'http://localhost:8000',
-      sellerUrl: 'http://localhost:8001',
-      interval: 1,
-      preset: 'happy' as SimPreset,
-    }
-    setGatewayUrl(defaults.gatewayUrl)
-    setSellerUrl(defaults.sellerUrl)
-    setInterval(defaults.interval)
-    setPreset(defaults.preset)
+    setGatewayUrl('http://localhost:8000')
+    setSellerUrl('http://localhost:8001')
+    setInterval(1)
+    setPreset('happy')
+    setBalancePoll(10)
+    setReceiptPoll(5)
+    setEventPoll(3)
   }
 
   const isDirty =
     gatewayUrl !== store.gatewayUrl ||
     sellerUrl !== store.sellerUrl ||
     interval !== store.autopilotInterval ||
-    preset !== store.currentPreset
+    preset !== store.currentPreset ||
+    balancePoll !== store.balancePollInterval ||
+    receiptPoll !== store.receiptPollInterval ||
+    eventPoll !== store.eventPollInterval
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col gap-4">
@@ -156,6 +184,23 @@ export function SettingsPage() {
         </CardBody>
       </Card>
 
+      {/* Display / Polling */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Display & Polling</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
+            How often each data source refreshes in the background (seconds).
+          </p>
+          <div className="divide-y" style={{ borderColor: 'var(--color-border-subtle)' }}>
+            <NumberInput label="Balance refresh interval" value={balancePoll} onChange={setBalancePoll} min={2} max={120} />
+            <NumberInput label="Receipts refresh interval" value={receiptPoll} onChange={setReceiptPoll} min={1} max={60} />
+            <NumberInput label="Events refresh interval" value={eventPoll} onChange={setEventPoll} min={1} max={30} />
+          </div>
+        </CardBody>
+      </Card>
+
       {/* Current state */}
       <Card>
         <CardHeader>
@@ -166,8 +211,11 @@ export function SettingsPage() {
             {[
               ['Gateway URL', store.gatewayUrl],
               ['Seller URL', store.sellerUrl],
-              ['Tick Interval', `${store.autopilotInterval}s`],
+              ['Autopilot Tick', `${store.autopilotInterval}s`],
               ['Default Preset', store.currentPreset],
+              ['Balance Poll', `${store.balancePollInterval}s`],
+              ['Receipts Poll', `${store.receiptPollInterval}s`],
+              ['Events Poll', `${store.eventPollInterval}s`],
             ].map(([label, value]) => (
               <div key={label} className="flex justify-between">
                 <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
