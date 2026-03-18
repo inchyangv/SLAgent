@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useNetwork } from '../../hooks/useNetwork'
 
 const navLinks = [
   { to: '/', label: 'Dashboard', end: true },
@@ -11,6 +13,7 @@ const navLinks = [
 
 export function GNB() {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { isConnected, networkName, isCorrectNetwork } = useNetwork()
 
   return (
     <>
@@ -51,17 +54,7 @@ export function GNB() {
             >
               {({ isActive }) => (
                 <>
-                  <span
-                    className="transition-colors hover:text-white"
-                    onMouseEnter={(e) => {
-                      if (!isActive) e.currentTarget.style.color = 'var(--color-text-primary)'
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) e.currentTarget.style.color = ''
-                    }}
-                  >
-                    {label}
-                  </span>
+                  {label}
                   {isActive && (
                     <span
                       className="absolute bottom-0 left-3 right-3 h-px"
@@ -79,36 +72,32 @@ export function GNB() {
           {/* Network indicator */}
           <div className="hidden sm:flex items-center gap-1.5">
             <span
-              className="w-2 h-2 rounded-full inline-block animate-pulse"
-              style={{ background: 'var(--color-success)' }}
+              className="w-2 h-2 rounded-full inline-block"
+              style={{
+                background: isConnected
+                  ? (isCorrectNetwork ? 'var(--color-success)' : 'var(--color-warning)')
+                  : 'var(--color-text-muted)',
+                animation: isConnected ? 'pulse 2s infinite' : 'none',
+              }}
             />
             <span
               className="text-xs font-mono"
-              style={{ color: 'var(--color-text-secondary)' }}
+              style={{
+                color: !isCorrectNetwork && isConnected
+                  ? 'var(--color-warning)'
+                  : 'var(--color-text-secondary)',
+              }}
             >
-              Sepolia
+              {isConnected ? networkName : 'Sepolia'}
             </span>
           </div>
 
-          {/* Wallet button */}
-          <button
-            className="px-3 py-1 rounded text-xs font-medium border transition-all duration-150"
-            style={{
-              background: 'transparent',
-              borderColor: 'var(--color-border-strong)',
-              color: 'var(--color-text-secondary)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-accent)'
-              e.currentTarget.style.color = 'var(--color-accent)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-border-strong)'
-              e.currentTarget.style.color = 'var(--color-text-secondary)'
-            }}
-          >
-            Connect Wallet
-          </button>
+          {/* RainbowKit wallet button */}
+          <ConnectButton
+            accountStatus="avatar"
+            chainStatus="icon"
+            showBalance={false}
+          />
 
           {/* Mobile hamburger */}
           <button
@@ -151,10 +140,14 @@ export function GNB() {
           <div className="flex items-center gap-1.5 px-3 py-2 mt-1">
             <span
               className="w-2 h-2 rounded-full"
-              style={{ background: 'var(--color-success)' }}
+              style={{
+                background: isConnected && isCorrectNetwork
+                  ? 'var(--color-success)'
+                  : 'var(--color-text-muted)',
+              }}
             />
             <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              Sepolia
+              {isConnected ? networkName : 'Not connected'}
             </span>
           </div>
         </div>
