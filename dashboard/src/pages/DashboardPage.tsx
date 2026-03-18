@@ -18,6 +18,7 @@ import { DisputePanel } from '../components/dashboard/DisputePanel'
 import { MandateList } from '../components/dashboard/MandateList'
 import { SellerCapabilities } from '../components/dashboard/SellerCapabilities'
 import { ActivityLog } from '../components/dashboard/ActivityLog'
+import { LatencyChart, PayoutChart, PassFailChart } from '../components/dashboard/Charts'
 import type { SimPreset } from '../types'
 
 const PRESET_STYLES: Record<SimPreset, { active: string; label: string }> = {
@@ -169,6 +170,16 @@ export function DashboardPage() {
       <section>
         <SectionTitle>Overview</SectionTitle>
         <HeroStats receipts={receipts} />
+      </section>
+
+      {/* ─── Charts ─── */}
+      <section>
+        <SectionTitle>Analytics</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <LatencyChart receipts={receipts} slaThresholdMs={2000} />
+          <PayoutChart receipts={receipts} />
+          <PassFailChart receipts={receipts} />
+        </div>
       </section>
 
       {/* ─── Primary row: Balance + Mandate ─── */}
