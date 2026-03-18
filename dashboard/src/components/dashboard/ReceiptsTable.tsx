@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardBody } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -20,6 +20,7 @@ const TOKEN = 'USDT'
 export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableProps) {
   const [filter, setFilter] = useState<FilterTab>('all')
   const [selected, setSelected] = useState<Receipt | null>(null)
+  const [focusIdx, setFocusIdx] = useState<number>(-1)
 
   const filtered = receipts.filter((r) => {
     if (filter === 'pass') return r.validation?.overall_pass
@@ -35,6 +36,31 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
     { key: 'pass', label: 'Pass', count: passCount },
     { key: 'fail', label: 'Fail', count: failCount },
   ]
+
+  // Keyboard navigation: J/K to move, Enter to open, Esc to close
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (selected) {
+        if (e.key === 'Escape') setSelected(null)
+        return
+      }
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        setFocusIdx((i) => Math.min(i + 1, filtered.length - 1))
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setFocusIdx((i) => Math.max(i - 1, 0))
+      } else if (e.key === 'Enter' && focusIdx >= 0 && filtered[focusIdx]) {
+        setSelected(filtered[focusIdx])
+      }
+    },
+    [selected, filtered, focusIdx],
+  )
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
 
   return (
     <Card>
@@ -99,6 +125,7 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
                     </tr>
                   ))
                 : filtered.map((r, i) => {
+                    const isFocused = i === focusIdx
                     const vpass = r.validation?.overall_pass
                     const payout = r.pricing?.computed_payout ?? '0'
                     const refund = r.pricing?.computed_refund ?? '0'
@@ -122,14 +149,21 @@ export function ReceiptsTable({ receipts, isLoading, onRefresh }: ReceiptsTableP
                       <tr
                         key={r.request_id ?? i}
                         className="border-b cursor-pointer transition-colors"
-                        style={{ borderColor: 'var(--color-border-subtle)' }}
+                        style={{
+                          borderColor: 'var(--color-border-subtle)',
+                          background: isFocused ? 'rgba(74,158,255,0.07)' : '',
+                          outline: isFocused ? '1px solid rgba(74,158,255,0.4)' : 'none',
+                          outlineOffset: '-1px',
+                        }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--color-bg-elevated)'
+                          if (!isFocused) e.currentTarget.style.background = 'var(--color-bg-elevated)'
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = ''
+                          if (!isFocused) e.currentTarget.style.background = ''
                         }}
-                        onClick={() => setSelected(r)}
+                        onClick={() => { setFocusIdx(i); setSelected(r) }}
+                        aria-selected={isFocused}
+                        role="row"
                       >
                         <td
                           className="px-3 py-2 font-mono"
