@@ -1,6 +1,7 @@
-import React, { useCallback } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import { useSettingsStore } from '../store/settings'
 import { useAutopilotStore } from '../store/autopilot'
 import { useReceipts } from '../hooks/useReceipts'
@@ -19,16 +20,45 @@ import { SellerCapabilities } from '../components/dashboard/SellerCapabilities'
 import { ActivityLog } from '../components/dashboard/ActivityLog'
 import type { SimPreset } from '../types'
 
-const presetColors: Record<SimPreset, 'pass' | 'warning' | 'fail'> = {
+const PRESET_STYLES: Record<SimPreset, { active: string; label: string }> = {
+  happy: { active: 'bg-green-950 text-green-300 border-green-800', label: 'Happy Path' },
+  slow: { active: 'bg-amber-950 text-amber-300 border-amber-800', label: 'Slow SLA' },
+  breaches: { active: 'bg-red-950 text-red-300 border-red-800', label: 'Breaches' },
+}
+
+const PRESET_BADGE: Record<SimPreset, 'pass' | 'warning' | 'fail'> = {
   happy: 'pass',
   slow: 'warning',
   breaches: 'fail',
 }
 
-const PRESETS: SimPreset[] = ['happy', 'slow', 'breaches']
+function SectionTitle({ children, href }: { children: ReactNode; href?: string }) {
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <h2
+        className="text-xs font-semibold uppercase tracking-widest"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        {children}
+      </h2>
+      {href && (
+        <Link
+          to={href}
+          className="flex items-center gap-1 text-xs transition-colors"
+          style={{ color: 'var(--color-accent)' }}
+        >
+          View All
+          <ArrowRight size={11} />
+        </Link>
+      )}
+    </div>
+  )
+}
 
 export function DashboardPage() {
   const qc = useQueryClient()
+  const [configOpen, setConfigOpen] = useState(false)
+
   const gatewayUrl = useSettingsStore((s) => s.gatewayUrl)
   const sellerUrl = useSettingsStore((s) => s.sellerUrl)
   const setGatewayUrl = useSettingsStore((s) => s.setGatewayUrl)
@@ -46,107 +76,148 @@ export function DashboardPage() {
   }, [qc])
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 py-4 flex flex-col gap-4">
-      {/* Config bar */}
-      <div
-        className="flex flex-wrap items-end gap-3 p-3 rounded-md border"
-        style={{ background: 'var(--color-bg-elevated)', borderColor: 'var(--color-border)' }}
-      >
-        <div className="flex items-end gap-2 flex-1 min-w-[200px]">
-          <Input
-            label="Gateway URL"
-            value={gatewayUrl}
-            onChange={(e) => setGatewayUrl(e.target.value)}
-            className="flex-1"
-          />
-        </div>
-        <div className="flex items-end gap-2 flex-1 min-w-[200px]">
-          <Input
-            label="Seller URL"
-            value={sellerUrl}
-            onChange={(e) => setSellerUrl(e.target.value)}
-            className="flex-1"
-          />
-        </div>
-        <Button variant="default" size="sm" onClick={handleRefreshAll}>
-          <RefreshCw size={13} />
-          Refresh All
-        </Button>
-        <div className="flex items-center gap-1">
-          {PRESETS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPreset(p)}
-              className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors border ${
-                currentPreset === p
-                  ? p === 'happy'
-                    ? 'bg-green-900 text-green-300 border-green-800'
-                    : p === 'slow'
-                      ? 'bg-amber-900 text-amber-300 border-amber-800'
-                      : 'bg-red-900 text-red-300 border-red-800'
-                  : 'bg-transparent text-zinc-500 border-zinc-800 hover:text-zinc-300'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-          <Badge variant={presetColors[currentPreset]} className="ml-1">
-            {currentPreset.toUpperCase()}
-          </Badge>
-        </div>
-      </div>
+    <div className="max-w-screen-2xl mx-auto px-4 py-4 flex flex-col gap-5">
 
-      {/* Top shell: Balance panel */}
-      <div className="flex flex-wrap gap-4 items-start">
-        <div className="flex-1 min-w-[260px] max-w-sm">
-          <BalancePanel />
-        </div>
-        <div className="flex-1 min-w-[300px]">
+      {/* ─── Config bar (collapsible) ─── */}
+      <div
+        className="rounded-md border overflow-hidden"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <button
+          className="w-full flex items-center justify-between px-4 py-2 text-xs transition-colors"
+          style={{
+            background: 'var(--color-bg-elevated)',
+            color: 'var(--color-text-secondary)',
+          }}
+          onClick={() => setConfigOpen((v) => !v)}
+        >
+          <div className="flex items-center gap-3">
+            <span className="font-medium">Config</span>
+            <span className="font-mono" style={{ color: 'var(--color-text-muted)' }}>
+              {gatewayUrl}
+            </span>
+            <Badge variant={PRESET_BADGE[currentPreset]} className="text-xs">
+              {PRESET_STYLES[currentPreset].label}
+            </Badge>
+          </div>
+          {configOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {configOpen && (
           <div
-            className="p-4 rounded-md border h-full flex items-center"
-            style={{ background: 'var(--color-bg-elevated)', borderColor: 'var(--color-border)' }}
+            className="flex flex-wrap items-end gap-3 px-4 py-3 border-t"
+            style={{
+              background: 'var(--color-bg-secondary)',
+              borderColor: 'var(--color-border)',
+            }}
           >
-            <div>
-              <div
-                className="text-2xl font-bold tracking-tight"
-                style={{ color: 'var(--color-accent)' }}
-              >
-                SLAgent<span style={{ color: 'var(--color-text-muted)' }}>-402</span>
-              </div>
-              <div className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                Autonomous SLA Enforcement · Sepolia Testnet
+            <Input
+              label="Gateway URL"
+              value={gatewayUrl}
+              onChange={(e) => setGatewayUrl(e.target.value)}
+              className="w-52"
+            />
+            <Input
+              label="Seller URL"
+              value={sellerUrl}
+              onChange={(e) => setSellerUrl(e.target.value)}
+              className="w-52"
+            />
+
+            {/* Preset buttons */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                Scenario Preset
+              </span>
+              <div className="flex gap-1">
+                {(Object.keys(PRESET_STYLES) as SimPreset[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPreset(p)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors border ${
+                      currentPreset === p
+                        ? PRESET_STYLES[p].active
+                        : 'bg-transparent border-zinc-800 hover:border-zinc-600'
+                    }`}
+                    style={
+                      currentPreset !== p ? { color: 'var(--color-text-secondary)' } : undefined
+                    }
+                  >
+                    {PRESET_STYLES[p].label}
+                  </button>
+                ))}
               </div>
             </div>
+
+            <Button variant="default" size="sm" onClick={handleRefreshAll}>
+              <RefreshCw size={13} />
+              Refresh All
+            </Button>
+
+            <Link
+              to="/settings"
+              className="text-xs transition-colors"
+              style={{ color: 'var(--color-accent)' }}
+            >
+              Full Settings →
+            </Link>
           </div>
+        )}
+      </div>
+
+      {/* ─── Hero Stats ─── */}
+      <section>
+        <SectionTitle>Overview</SectionTitle>
+        <HeroStats receipts={receipts} />
+      </section>
+
+      {/* ─── Primary row: Balance + Mandate ─── */}
+      <section>
+        <SectionTitle>Protocol State</SectionTitle>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <BalancePanel />
+          <MandateList />
         </div>
-      </div>
+      </section>
 
-      {/* Autopilot */}
-      <AutopilotWidget />
+      {/* ─── Autopilot ─── */}
+      <section>
+        <SectionTitle>SLA Evaluator</SectionTitle>
+        <AutopilotWidget />
+      </section>
 
-      {/* Negotiation History */}
-      <NegotiationHistory />
+      {/* ─── Negotiation + Seller Caps ─── */}
+      <section>
+        <SectionTitle>Negotiation & Seller</SectionTitle>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <NegotiationHistory />
+          <SellerCapabilities />
+        </div>
+      </section>
 
-      {/* Hero Stats */}
-      <HeroStats receipts={receipts} />
+      {/* ─── Disputes + Activity Log ─── */}
+      <section>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <DisputePanel />
+          <ActivityLog />
+        </div>
+      </section>
 
-      {/* 2-column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SellerCapabilities />
-        <MandateList />
-        <DisputePanel />
-        <ActivityLog />
-      </div>
+      {/* ─── Event Timeline ─── */}
+      <section>
+        <SectionTitle>Event Timeline</SectionTitle>
+        <EventTimeline />
+      </section>
 
-      {/* Event Timeline */}
-      <EventTimeline />
-
-      {/* Receipts Table */}
-      <ReceiptsTable
-        receipts={receipts}
-        isLoading={receiptsLoading}
-        onRefresh={() => void refetchReceipts()}
-      />
+      {/* ─── Receipts (preview) ─── */}
+      <section>
+        <SectionTitle href="/receipts">Recent Receipts</SectionTitle>
+        <ReceiptsTable
+          receipts={receipts.slice(0, 25)}
+          isLoading={receiptsLoading}
+          onRefresh={() => void refetchReceipts()}
+        />
+      </section>
     </div>
   )
 }
