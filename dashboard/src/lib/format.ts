@@ -1,5 +1,28 @@
 const DECIMALS = 1_000_000 // 6 decimal USDT (µUSDT → USDT)
 
+/** formatCurrency: "$0.10", "$1.23M", "$4.56K" */
+export function formatCurrency(
+  raw: string | number | undefined | null,
+  symbol?: string,
+): string {
+  if (raw === undefined || raw === null || raw === '') return '—'
+  const n = typeof raw === 'string' ? parseFloat(raw) : raw
+  if (!Number.isFinite(n)) return '—'
+  const val = n / DECIMALS
+  const prefix = symbol ? '' : '$'
+  const suffix = symbol ? ` ${symbol}` : ''
+
+  if (Math.abs(val) >= 1_000_000) {
+    return `${prefix}${(val / 1_000_000).toFixed(2)}M${suffix}`
+  }
+  if (Math.abs(val) >= 1_000) {
+    return `${prefix}${(val / 1_000).toFixed(2)}K${suffix}`
+  }
+  // Show meaningful decimal places only
+  const fixed = val.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')
+  return `${prefix}${fixed}${suffix}`
+}
+
 export function formatAmount(
   raw: string | number | undefined | null,
   symbol?: string,
@@ -58,10 +81,10 @@ export function shortId(id: string | undefined | null): string {
   return `${id.slice(0, 8)}…${id.slice(-4)}`
 }
 
-export function relativeTime(ts: string | undefined | null): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  if (isNaN(d.getTime())) return ts
+export function relativeTime(ts: string | number | undefined | null): string {
+  if (ts === undefined || ts === null) return '—'
+  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts)
+  if (isNaN(d.getTime())) return String(ts)
   const diffMs = Date.now() - d.getTime()
   const diffSec = Math.floor(diffMs / 1000)
   if (diffSec < 5) return '방금'

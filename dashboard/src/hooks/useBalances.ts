@@ -6,7 +6,7 @@ import type { BalancesResponse } from '../types'
 export function useBalances() {
   const gatewayUrl = useSettingsStore((s) => s.gatewayUrl)
 
-  const { data, isLoading, error, refetch } = useQuery<BalancesResponse>({
+  const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery<BalancesResponse>({
     queryKey: ['balances', gatewayUrl],
     queryFn: () => fetchBalances(gatewayUrl),
     refetchInterval: 10000,
@@ -14,5 +14,5 @@ export function useBalances() {
     retry: 2,
   })
 
-  return { data, isLoading, error, refetch }
+  return { data, isLoading, error, refetch, dataUpdatedAt }
 }
