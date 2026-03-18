@@ -9,7 +9,9 @@ export interface LogEntry {
 
 interface LogState {
   entries: LogEntry[]
+  unreadCount: number
   addLog: (msg: string, type?: LogEntry['type']) => void
+  markAllRead: () => void
   clear: () => void
 }
 
@@ -17,6 +19,7 @@ const MAX_ENTRIES = 200
 
 export const useLogStore = create<LogState>()((set) => ({
   entries: [],
+  unreadCount: 0,
   addLog: (msg, type = 'info') =>
     set((state) => {
       const entry: LogEntry = {
@@ -26,7 +29,8 @@ export const useLogStore = create<LogState>()((set) => ({
         type,
       }
       const entries = [entry, ...state.entries].slice(0, MAX_ENTRIES)
-      return { entries }
+      return { entries, unreadCount: state.unreadCount + 1 }
     }),
-  clear: () => set({ entries: [] }),
+  markAllRead: () => set({ unreadCount: 0 }),
+  clear: () => set({ entries: [], unreadCount: 0 }),
 }))
