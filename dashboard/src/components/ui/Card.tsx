@@ -4,12 +4,13 @@ interface CardProps {
   children: React.ReactNode
   className?: string
   style?: React.CSSProperties
+  interactive?: boolean
 }
 
-export function Card({ children, className = '', style }: CardProps) {
+export function Card({ children, className = '', style, interactive = false }: CardProps) {
   return (
     <div
-      className={`rounded-md border ${className}`}
+      className={`rounded-md border transition-all duration-200 ${interactive ? 'hover:-translate-y-px hover:border-zinc-600 cursor-pointer' : ''} ${className}`}
       style={{
         background: 'var(--color-bg-secondary)',
         borderColor: 'var(--color-border)',

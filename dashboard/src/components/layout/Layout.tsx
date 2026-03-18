@@ -1,9 +1,10 @@
 import React from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { GNB } from './GNB'
 import { ToastContainer } from '../ui/Toast'
 
 export function Layout() {
+  const { pathname } = useLocation()
   return (
     <div
       className="min-h-screen flex flex-col"
@@ -11,7 +12,9 @@ export function Layout() {
     >
       <GNB />
       <main className="flex-1 overflow-auto">
-        <Outlet />
+        <div key={pathname} className="page-fade-in">
+          <Outlet />
+        </div>
       </main>
       <ToastContainer />
     </div>

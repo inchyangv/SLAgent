@@ -85,3 +85,28 @@ body {
 .slide-in-right {
   animation: slideInRight 0.25s ease-out;
 }
+
+/* Page transition */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-fade-in {
+  animation: pageFadeIn 0.15s ease-out;
+}
+
+/* Badge / status color transition */
+.badge-transition {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Value flash on data update */
+@keyframes valueFlash {
+  0% { background-color: rgba(74, 158, 255, 0.15); }
+  100% { background-color: transparent; }
+}
+
+.value-flash {
+  animation: valueFlash 1s ease-out;
+}
