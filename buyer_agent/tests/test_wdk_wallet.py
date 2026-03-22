@@ -33,7 +33,7 @@ def test_from_env_uses_role_defaults(monkeypatch):
 async def test_ensure_wallet_loaded_imports_once(monkeypatch):
     calls: list[tuple[str, str, Any]] = []
 
-    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+    async def fake_request(method: str, path: str, *, json_body: Any = None, **_kwargs: Any) -> dict[str, Any]:
         calls.append((method, path, json_body))
         return {"address": "0x1111111111111111111111111111111111111111"}
 
@@ -54,7 +54,7 @@ async def test_ensure_wallet_loaded_imports_once(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ensure_wallet_loaded_rejects_address_mismatch(monkeypatch):
-    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+    async def fake_request(method: str, path: str, *, json_body: Any = None, **_kwargs: Any) -> dict[str, Any]:
         return {"address": "0x2222222222222222222222222222222222222222"}
 
     wallet = WDKWallet(
@@ -74,7 +74,7 @@ async def test_balance_approve_deposit_and_sign(monkeypatch):
     calls: list[tuple[str, str, Any]] = []
     ADDR = "0x1111111111111111111111111111111111111111"
 
-    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+    async def fake_request(method: str, path: str, *, json_body: Any = None, **_kwargs: Any) -> dict[str, Any]:
         calls.append((method, path, json_body))
         if path == "/wallet/import":
             return {"address": ADDR}
@@ -124,7 +124,7 @@ async def test_balance_approve_deposit_and_sign(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_request_raises_service_error(monkeypatch):
-    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+    async def fake_request(method: str, path: str, *, json_body: Any = None, **_kwargs: Any) -> dict[str, Any]:
         raise WDKServiceError("bad request")
 
     wallet = WDKWallet(
@@ -136,3 +136,64 @@ async def test_request_raises_service_error(monkeypatch):
 
     with pytest.raises(WDKServiceError, match="bad request"):
         await wallet.ensure_wallet_loaded()
+
+
+@pytest.mark.asyncio
+async def test_wallet_auto_recovery_on_not_loaded(monkeypatch):
+    """When WDK returns 'wallet not loaded' (service restart), _request auto-recovers.
+
+    Sequence:
+    1. First call → "wallet not loaded" error
+    2. Auto re-import (ensure_wallet_loaded) → address set
+    3. Retry with updated address → success
+    """
+    ADDR = "0x" + "ab" * 20
+    call_log: list[tuple[str, str, Any]] = []
+
+    async def fake_request_inner(
+        method: str, path: str, *, json_body: Any = None
+    ) -> dict[str, Any]:
+        call_log.append((method, path, json_body))
+        if path == "/wallet/sign-bytes" and not call_log:
+            raise WDKServiceError(f"wallet not loaded: {ADDR}")
+        if path == "/wallet/import":
+            return {"address": ADDR}
+        if path == "/wallet/sign-bytes":
+            return {"signature": "0x" + "ee" * 65}
+        raise WDKServiceError(f"unexpected path {path}")
+
+    # Simulate a wallet that already cached an address (pre-restart state)
+    wallet = WDKWallet(
+        service_url="http://localhost:3100",
+        seed_phrase="test test test test test test test test test test test junk",
+        account_index=0,
+    )
+    wallet._address = ADDR
+    monkeypatch.setattr(wallet, "_request_inner", fake_request_inner)
+
+    # sign_bytes calls _request → "wallet not loaded" → recovery → retry
+    # First call to _request_inner raises wallet-not-loaded
+    first_call = True
+
+    async def fake_request_inner_staged(
+        method: str, path: str, *, json_body: Any = None
+    ) -> dict[str, Any]:
+        nonlocal first_call
+        call_log.append((method, path))
+        if path == "/wallet/sign-bytes" and first_call:
+            first_call = False
+            raise WDKServiceError(f"wallet not loaded: {ADDR}")
+        if path == "/wallet/import":
+            return {"address": ADDR}
+        if path == "/wallet/sign-bytes":
+            return {"signature": "0x" + "ee" * 65}
+        raise WDKServiceError(f"unexpected path {path}")
+
+    monkeypatch.setattr(wallet, "_request_inner", fake_request_inner_staged)
+
+    result = await wallet.sign_bytes("0xdeadbeef")
+    assert result == "0x" + "ee" * 65
+    # Should have: sign-bytes (fail) + import (recovery) + sign-bytes (retry)
+    paths = [p for _, p in call_log]
+    assert "/wallet/sign-bytes" in paths
+    assert "/wallet/import" in paths

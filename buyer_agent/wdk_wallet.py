@@ -161,6 +161,40 @@ class WDKWallet:
         path: str,
         *,
         json_body: dict[str, Any] | None = None,
+        _wallet_recovery: bool = True,
+    ) -> dict[str, Any]:
+        """Send an authenticated request to the WDK sidecar.
+
+        If the sidecar responds with "wallet not loaded" (happens when the
+        sidecar restarts and loses its in-memory wallet map), the cached
+        ``_address`` is cleared, the wallet is re-imported, the request body
+        ``address`` field is updated, and the call is retried exactly once.
+        Pass ``_wallet_recovery=False`` to disable this behaviour (used
+        internally to avoid infinite recursion).
+        """
+        try:
+            return await self._request_inner(method, path, json_body=json_body)
+        except WDKServiceError as exc:
+            err_msg = str(exc).lower()
+            if _wallet_recovery and "wallet not loaded" in err_msg and self.seed_phrase:
+                logger.info(
+                    "WDK wallet not found (service restarted?) — re-importing and retrying"
+                )
+                self._address = None
+                await self.ensure_wallet_loaded()
+                # Patch the address in json_body so the request uses the fresh address
+                patched_body: dict[str, Any] | None = json_body
+                if json_body and "address" in json_body and self._address:
+                    patched_body = {**json_body, "address": self._address}
+                return await self._request_inner(method, path, json_body=patched_body)
+            raise
+
+    async def _request_inner(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._cb_check()
 
@@ -245,6 +279,8 @@ class WDKWallet:
         if self._address:
             return self._address
 
+        # Disable wallet recovery to prevent recursion:
+        # _request(recovery=True) → ensure_wallet_loaded → _request(recovery=True) ...
         data = await self._request(
             "POST",
             "/wallet/import",
@@ -252,6 +288,7 @@ class WDKWallet:
                 "seedPhrase": self.seed_phrase,
                 "accountIndex": self.account_index,
             },
+            _wallet_recovery=False,
         )
         address = str(data.get("address", "")).strip()
         if not address:

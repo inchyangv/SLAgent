@@ -885,7 +885,7 @@ WDK 실패 → local key signing fallback 경로 테스트가 없음.
 ---
 
 ## T-166 — WDK In-Memory Wallet 복구 (Service Restart Resilience)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P2
 **Depends on:** T-153
 
