@@ -298,17 +298,8 @@ class BuyerAgent:
         if not settlement_addr:
             return None
 
-        abi = [{
-            "inputs": [
-                {"name": "requestId", "type": "bytes32"},
-                {"name": "buyer", "type": "address"},
-                {"name": "amount", "type": "uint256"},
-            ],
-            "name": "deposit",
-            "outputs": [],
-            "stateMutability": "nonpayable",
-            "type": "function",
-        }]
+        from shared.load_abi import load_settlement_abi
+        abi = load_settlement_abi()
 
         request_id_bytes = Web3.keccak(text=request_id)
         contract = self._buyer_w3.eth.contract(

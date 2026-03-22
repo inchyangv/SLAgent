@@ -2,6 +2,14 @@ import express from "express";
 import { ethers } from "ethers";
 import WDK from "@tetherto/wdk";
 import WalletManagerEvm from "@tetherto/wdk-wallet-evm";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SETTLEMENT_ABI = JSON.parse(
+  readFileSync(join(__dirname, "../../shared/abi/settlement.json"), "utf8")
+);
 
 const PORT = Number(process.env.WDK_PORT || 3100);
 const CHAIN_NAME = process.env.WDK_CHAIN_NAME || "ethereum";
@@ -29,9 +37,8 @@ app.use((req, res, next) => {
 });
 
 const wallets = new Map();
-const depositInterface = new ethers.Interface([
-  "function deposit(bytes32 requestId,address buyer,uint256 amount)",
-]);
+// Load deposit function ABI from shared source of truth
+const depositInterface = new ethers.Interface(SETTLEMENT_ABI);
 
 // --- Per-wallet nonce manager (prevents concurrent tx collisions) ---
 const pendingNonce = new Map(); // address → last-used nonce

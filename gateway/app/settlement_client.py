@@ -18,63 +18,12 @@ from buyer_agent.wdk_wallet import WDKWallet
 from facilitator.settlement import SettlementClient
 from facilitator.settlement import compute_settlement_hash
 from gateway.app.config import settings
+from shared.load_abi import load_settlement_abi
 
 logger = logging.getLogger("sla-gateway.settlement")
 
-# Settlement contract ABI (deposit, settle, dispute functions)
-SETTLEMENT_ABI = [
-    {
-        "inputs": [
-            {"name": "requestId", "type": "bytes32"},
-            {"name": "buyer", "type": "address"},
-            {"name": "amount", "type": "uint256"},
-        ],
-        "name": "deposit",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {"name": "mandateId", "type": "bytes32"},
-            {"name": "requestId", "type": "bytes32"},
-            {"name": "buyer", "type": "address"},
-            {"name": "seller", "type": "address"},
-            {"name": "maxPrice", "type": "uint256"},
-            {"name": "payout", "type": "uint256"},
-            {"name": "receiptHash", "type": "bytes32"},
-            {"name": "gatewaySig", "type": "bytes"},
-        ],
-        "name": "settle",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"name": "requestId", "type": "bytes32"}],
-        "name": "openDispute",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {"name": "requestId", "type": "bytes32"},
-            {"name": "finalPayout", "type": "uint256"},
-        ],
-        "name": "resolveDispute",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"name": "requestId", "type": "bytes32"}],
-        "name": "finalize",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-]
+# Settlement contract ABI — loaded from shared/abi/settlement.json (single source of truth)
+SETTLEMENT_ABI = load_settlement_abi()
 
 # Singleton settlement client
 _client: SettlementClient | None = None
