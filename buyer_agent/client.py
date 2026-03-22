@@ -379,27 +379,12 @@ class BuyerAgent:
             call_body["scenario_tag"] = scenario_tag
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            # Step 1: Buyer-funded on-chain deposit (if chain env is configured)
+            # Step 1: Buyer-funded on-chain deposit (best-effort, not blocking)
+            deposit_tx_hash = None
             try:
                 deposit_tx_hash = await self._submit_buyer_deposit(request_id_hint, max_price_int)
             except Exception as e:
-                return BuyerResult(
-                    request_id=request_id_hint,
-                    mode=mode,
-                    success=False,
-                    metrics={},
-                    validation_passed=False,
-                    payout=0,
-                    refund=0,
-                    max_price=max_price_int,
-                    receipt_hash="",
-                    tx_hash=None,
-                    deposit_tx_hash=None,
-                    settle_tx_hash=None,
-                    seller_response={},
-                    invariant_checks=[],
-                    error=f"Buyer deposit failed: {e}",
-                )
+                logger.warning("Buyer deposit failed (continuing without): %s", e)
 
             # Step 2: Gateway call (deposit-backed when tx hash is present)
             headers: dict[str, str] = {}
