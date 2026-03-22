@@ -31,7 +31,7 @@ class Settings:
     payment_token: str = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
     gateway_private_key: str = os.getenv("GATEWAY_PRIVATE_KEY", "")
     host: str = os.getenv("GATEWAY_HOST", "0.0.0.0")
-    port: int = int(os.getenv("GATEWAY_PORT", "8000"))
+    port: int = int(os.getenv("PORT", os.getenv("GATEWAY_PORT", "8000")))
 
 
 settings = Settings()
