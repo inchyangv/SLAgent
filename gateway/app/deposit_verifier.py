@@ -118,8 +118,22 @@ def verify_deposit_submission(
                 "mode": "mock_no_chain",
                 "source": "no_chain_config",
             }
+        # In demo mode, allow calls without deposit for easier demonstration
+        import os
+        if os.getenv("DEMO_MODE", "").lower() == "true":
+            return {
+                "request_id": request_id,
+                "buyer": buyer,
+                "amount": max_price,
+                "tx_hash": None,
+                "mode": "demo_bypass",
+                "source": source,
+            }
         return None
 
+    # Normalize: add 0x prefix if missing
+    if tx_hash and not tx_hash.startswith("0x"):
+        tx_hash = "0x" + tx_hash
     if not _TX_HASH_RE.fullmatch(tx_hash):
         return None
 
