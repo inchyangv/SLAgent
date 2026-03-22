@@ -112,6 +112,20 @@ class BuyerAgent:
         self._buyer_account: Any | None = None
         self._last_nonce: int | None = None
         self._wdk_wallet = WDKWallet.from_env(role="buyer", expected_address=buyer_address)
+        self._wdk_health_checked = False
+
+    async def _ensure_wdk_healthy(self) -> None:
+        """Run WDK health check once; warn on failure but allow fallback to continue."""
+        if self._wdk_health_checked or not self._wdk_wallet:
+            return
+        self._wdk_health_checked = True
+        try:
+            await self._wdk_wallet.health()
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger("sla-gateway.buyer").warning(
+                "WDK sidecar health check failed (will use local-key fallback): %s", exc
+            )
 
     async def _register_mandate(self, mandate: dict[str, Any]) -> str | None:
         """Best-effort mandate registration with the gateway."""
@@ -124,6 +138,7 @@ class BuyerAgent:
 
     async def discover_seller(self) -> dict[str, Any]:
         """Discover seller capabilities via GET /seller/capabilities."""
+        await self._ensure_wdk_healthy()
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(f"{self.seller_url}/seller/capabilities")
             if resp.status_code != 200:

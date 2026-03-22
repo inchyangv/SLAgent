@@ -75,6 +75,26 @@ def _get_gateway_wdk_wallet() -> WDKWallet | None:
     return _gateway_wdk_wallet
 
 
+async def check_wdk_health() -> None:
+    """Probe WDK sidecar health at gateway startup; log result but never block startup."""
+    wdk = _get_gateway_wdk_wallet()
+    if wdk is None:
+        logger.info("WDK not configured for gateway — skipping health check")
+        return
+    try:
+        info = await wdk.health()
+        logger.info(
+            "WDK sidecar connected: status=%s chain_id=%s block=%s",
+            info.get("status"),
+            info.get("chain_id"),
+            info.get("block_number"),
+        )
+    except Exception as exc:
+        logger.warning(
+            "WDK sidecar health check failed at startup (fallback to local key): %s", exc
+        )
+
+
 def submit_deposit(
     *,
     request_id: str,

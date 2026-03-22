@@ -27,6 +27,7 @@ from gateway.app.pricing import PricingDecision, compute_payout
 from gateway.app.receipt import build_receipt, generate_request_id, receipt_store
 from gateway.app.llm_policy import evaluate_sla_with_gemini, suggest_mandate_with_gemini
 from gateway.app.settlement_client import (
+    check_wdk_health,
     settle_request,
     submit_dispute_open,
     submit_dispute_resolve,
@@ -36,7 +37,17 @@ from gateway.app.validators.json_schema import validate_json_schema
 
 logger = logging.getLogger("sla-gateway")
 
-app = FastAPI(title="SLAgent-402 Gateway", version="0.2.0")
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app_: FastAPI):  # type: ignore[type-arg]
+    # Startup: probe WDK sidecar health
+    await check_wdk_health()
+    yield
+
+
+app = FastAPI(title="SLAgent-402 Gateway", version="0.2.0", lifespan=lifespan)
 
 # Demo behavior toggles
 _DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"

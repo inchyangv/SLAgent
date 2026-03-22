@@ -371,6 +371,30 @@ class WDKWallet:
         )
         return str(data.get("signature", ""))
 
+    async def health(self) -> dict[str, Any]:
+        """Call GET /health on the WDK sidecar without auth.
+
+        Returns the health dict from the sidecar (status, version, etc.).
+        Raises WDKServiceError if the sidecar is unreachable.
+        """
+        t0 = time.monotonic()
+        try:
+            client = self._get_async_client()
+            response = await client.get("/health", headers={})  # no auth on /health
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            raise WDKServiceError(f"WDK health check failed: {exc}") from exc
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        data: dict[str, Any] = response.json()
+        if response.status_code >= 400:
+            raise WDKServiceError(f"WDK health returned {response.status_code}")
+        logger.info(
+            "WDK health OK in %dms — status=%s chain_id=%s",
+            duration_ms,
+            data.get("status"),
+            data.get("chain_id"),
+        )
+        return data
+
     async def status(self) -> dict[str, Any]:
         return {
             "address": self._address,
