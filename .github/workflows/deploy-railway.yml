@@ -80,5 +80,4 @@ jobs:
             --detach \
             --project "$RAILWAY_PROJECT_ID" \
             --environment "$ENV_NAME" \
-            --service "$SERVICE" \
-            .
+            --service "$SERVICE"
