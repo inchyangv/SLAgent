@@ -33,6 +33,41 @@ const depositInterface = new ethers.Interface([
   "function deposit(bytes32 requestId,address buyer,uint256 amount)",
 ]);
 
+// --- Per-wallet nonce manager (prevents concurrent tx collisions) ---
+const pendingNonce = new Map(); // address → last-used nonce
+const walletLocks = new Map(); // address → promise chain (mutex)
+
+async function withWalletLock(address, fn) {
+  const key = String(address).toLowerCase();
+  const prev = walletLocks.get(key) || Promise.resolve();
+  let resolveLock;
+  const current = prev.then(() => new Promise((res) => { resolveLock = res; }));
+  walletLocks.set(key, current.catch(() => {})); // ensure chain never breaks
+  await prev; // wait for previous operation
+  try {
+    return await fn();
+  } finally {
+    resolveLock();
+  }
+}
+
+async function getNextNonce(address) {
+  const key = String(address).toLowerCase();
+  const chainNonce = await provider.getTransactionCount(address, "pending");
+  const local = pendingNonce.get(key);
+  const next = local != null ? Math.max(chainNonce, local + 1) : chainNonce;
+  pendingNonce.set(key, next);
+  return next;
+}
+
+function rollbackNonce(address) {
+  const key = String(address).toLowerCase();
+  const current = pendingNonce.get(key);
+  if (current != null && current > 0) {
+    pendingNonce.set(key, current - 1);
+  }
+}
+
 function badRequest(message) {
   const error = new Error(message);
   error.statusCode = 400;
@@ -197,10 +232,16 @@ app.post("/wallet/transfer", async (req, res, next) => {
       throw badRequest("address, to, and amount are required");
     }
     const record = getWalletRecord(address);
-    const txHash = await record.account.transfer({
-      to: String(to),
-      amount: normalizeValue(amount),
-      tokenAddress: getTokenAddress(tokenAddress),
+    const txHash = await withWalletLock(address, async () => {
+      const result = await record.account.transfer({
+        to: String(to),
+        amount: normalizeValue(amount),
+        tokenAddress: getTokenAddress(tokenAddress),
+      });
+      // track last-used nonce optimistically
+      const nonce = await getNextNonce(address);
+      pendingNonce.set(String(address).toLowerCase(), nonce);
+      return result;
     });
     res.json({ txHash });
   } catch (error) {
@@ -215,10 +256,15 @@ app.post("/wallet/approve", async (req, res, next) => {
       throw badRequest("address, spender, and amount are required");
     }
     const record = getWalletRecord(address);
-    const txHash = await record.account.approve({
-      spender: String(spender),
-      amount: normalizeValue(amount),
-      tokenAddress: getTokenAddress(tokenAddress),
+    const txHash = await withWalletLock(address, async () => {
+      const result = await record.account.approve({
+        spender: String(spender),
+        amount: normalizeValue(amount),
+        tokenAddress: getTokenAddress(tokenAddress),
+      });
+      const nonce = await getNextNonce(address);
+      pendingNonce.set(String(address).toLowerCase(), nonce);
+      return result;
     });
     res.json({ txHash });
   } catch (error) {
@@ -234,15 +280,26 @@ app.post("/wallet/deposit", async (req, res, next) => {
     }
     const record = getWalletRecord(address);
     const buyerAddress = String(buyer || address);
-    const txHash = await record.account.sendTransaction({
-      to: getSettlementAddress(settlementContract),
-      value: 0n,
-      data: depositInterface.encodeFunctionData("deposit", [
-        ethers.keccak256(ethers.toUtf8Bytes(String(requestId))),
-        buyerAddress,
-        BigInt(amount),
-      ]),
-    });
+    let txHash;
+    try {
+      txHash = await withWalletLock(address, async () => {
+        const nonce = await getNextNonce(address);
+        const result = await record.account.sendTransaction({
+          to: getSettlementAddress(settlementContract),
+          value: 0n,
+          data: depositInterface.encodeFunctionData("deposit", [
+            ethers.keccak256(ethers.toUtf8Bytes(String(requestId))),
+            buyerAddress,
+            BigInt(amount),
+          ]),
+          nonce,
+        });
+        return result;
+      });
+    } catch (txErr) {
+      rollbackNonce(address);
+      throw txErr;
+    }
     res.json({ txHash });
   } catch (error) {
     next(error);
