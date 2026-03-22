@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Any
+from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 from buyer_agent.wdk_wallet import WDKServiceError, WDKWallet
-
-
-@dataclass
-class _MockResponse:
-    status_code: int
-    payload: dict[str, object]
-
-    def json(self) -> dict[str, object]:
-        return self.payload
 
 
 def test_from_env_requires_url_and_seed(monkeypatch):
@@ -38,17 +29,13 @@ def test_from_env_uses_role_defaults(monkeypatch):
     assert wallet.expected_address == "0xabc"
 
 
-def test_ensure_wallet_loaded_imports_once(monkeypatch):
-    calls: list[tuple[str, str, dict[str, object] | None]] = []
+@pytest.mark.asyncio
+async def test_ensure_wallet_loaded_imports_once(monkeypatch):
+    calls: list[tuple[str, str, Any]] = []
 
-    def fake_request(method: str, url: str, json: dict[str, object] | None = None, timeout: float = 0):
-        calls.append((method, url, json))
-        return _MockResponse(
-            200,
-            {"address": "0x1111111111111111111111111111111111111111"},
-        )
-
-    monkeypatch.setattr(httpx, "request", fake_request)
+    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+        calls.append((method, path, json_body))
+        return {"address": "0x1111111111111111111111111111111111111111"}
 
     wallet = WDKWallet(
         service_url="http://localhost:3100",
@@ -56,22 +43,19 @@ def test_ensure_wallet_loaded_imports_once(monkeypatch):
         account_index=0,
         expected_address="0x1111111111111111111111111111111111111111",
     )
+    monkeypatch.setattr(wallet, "_request", fake_request)
 
-    assert wallet.ensure_wallet_loaded() == "0x1111111111111111111111111111111111111111"
-    assert wallet.ensure_wallet_loaded() == "0x1111111111111111111111111111111111111111"
+    assert await wallet.ensure_wallet_loaded() == "0x1111111111111111111111111111111111111111"
+    assert await wallet.ensure_wallet_loaded() == "0x1111111111111111111111111111111111111111"
     assert len(calls) == 1
     assert calls[0][0] == "POST"
-    assert calls[0][1] == "http://localhost:3100/wallet/import"
+    assert calls[0][1] == "/wallet/import"
 
 
-def test_ensure_wallet_loaded_rejects_address_mismatch(monkeypatch):
-    def fake_request(method: str, url: str, json: dict[str, object] | None = None, timeout: float = 0):
-        return _MockResponse(
-            200,
-            {"address": "0x2222222222222222222222222222222222222222"},
-        )
-
-    monkeypatch.setattr(httpx, "request", fake_request)
+@pytest.mark.asyncio
+async def test_ensure_wallet_loaded_rejects_address_mismatch(monkeypatch):
+    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+        return {"address": "0x2222222222222222222222222222222222222222"}
 
     wallet = WDKWallet(
         service_url="http://localhost:3100",
@@ -79,53 +63,55 @@ def test_ensure_wallet_loaded_rejects_address_mismatch(monkeypatch):
         account_index=0,
         expected_address="0x1111111111111111111111111111111111111111",
     )
+    monkeypatch.setattr(wallet, "_request", fake_request)
 
     with pytest.raises(WDKServiceError, match="wdk address mismatch"):
-        wallet.ensure_wallet_loaded()
+        await wallet.ensure_wallet_loaded()
 
 
-def test_balance_approve_deposit_and_sign(monkeypatch):
-    calls: list[tuple[str, str, dict[str, object] | None]] = []
+@pytest.mark.asyncio
+async def test_balance_approve_deposit_and_sign(monkeypatch):
+    calls: list[tuple[str, str, Any]] = []
+    ADDR = "0x1111111111111111111111111111111111111111"
 
-    def fake_request(method: str, url: str, json: dict[str, object] | None = None, timeout: float = 0):
-        calls.append((method, url, json))
-        if url.endswith("/wallet/import"):
-            return _MockResponse(200, {"address": "0x1111111111111111111111111111111111111111"})
-        if "/balance" in url:
-            return _MockResponse(200, {"native": "1", "tokenBalance": "2"})
-        if url.endswith("/wallet/approve"):
-            return _MockResponse(200, {"txHash": "0xapprove"})
-        if url.endswith("/wallet/deposit"):
-            return _MockResponse(200, {"txHash": "0xdeposit"})
-        if url.endswith("/wallet/sign-message"):
-            return _MockResponse(200, {"signature": "0xsigned"})
-        if url.endswith("/wallet/sign-bytes"):
-            return _MockResponse(200, {"signature": "0xbytesigned"})
-        raise AssertionError(f"unexpected URL {url}")
-
-    monkeypatch.setattr(httpx, "request", fake_request)
+    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+        calls.append((method, path, json_body))
+        if path == "/wallet/import":
+            return {"address": ADDR}
+        if "/balance" in path:
+            return {"native": "1", "tokenBalance": "2"}
+        if path == "/wallet/approve":
+            return {"txHash": "0xapprove"}
+        if path == "/wallet/deposit":
+            return {"txHash": "0xdeposit"}
+        if path == "/wallet/sign-message":
+            return {"signature": "0xsigned"}
+        if path == "/wallet/sign-bytes":
+            return {"signature": "0xbytesigned"}
+        raise AssertionError(f"unexpected path {path}")
 
     wallet = WDKWallet(
         service_url="http://localhost:3100",
         seed_phrase="test test test test test test test test test test test junk",
         account_index=0,
     )
+    monkeypatch.setattr(wallet, "_request", fake_request)
 
-    balance = wallet.balance(token_address="0x9999999999999999999999999999999999999999")
-    approve_tx = wallet.approve(
+    balance = await wallet.balance(token_address="0x9999999999999999999999999999999999999999")
+    approve_tx = await wallet.approve(
         spender="0x3333333333333333333333333333333333333333",
         amount=123,
         token_address="0x9999999999999999999999999999999999999999",
     )
-    deposit_tx = wallet.deposit(
+    deposit_tx = await wallet.deposit(
         request_id="req_123",
         amount=123,
         settlement_contract="0x4444444444444444444444444444444444444444",
         buyer_address="0x5555555555555555555555555555555555555555",
     )
-    signature = wallet.sign_message("hello")
-    byte_signature = wallet.sign_bytes("0x" + "ab" * 32)
-    status = wallet.status()
+    signature = await wallet.sign_message("hello")
+    byte_signature = await wallet.sign_bytes("0x" + "ab" * 32)
+    status = await wallet.status()
 
     assert balance["tokenBalance"] == "2"
     assert approve_tx == "0xapprove"
@@ -136,17 +122,17 @@ def test_balance_approve_deposit_and_sign(monkeypatch):
     assert len(calls) == 6
 
 
-def test_request_raises_service_error(monkeypatch):
-    def fake_request(method: str, url: str, json: dict[str, object] | None = None, timeout: float = 0):
-        return _MockResponse(400, {"error": "bad request"})
-
-    monkeypatch.setattr(httpx, "request", fake_request)
+@pytest.mark.asyncio
+async def test_request_raises_service_error(monkeypatch):
+    async def fake_request(method: str, path: str, *, json_body: Any = None) -> dict[str, Any]:
+        raise WDKServiceError("bad request")
 
     wallet = WDKWallet(
         service_url="http://localhost:3100",
         seed_phrase="test test test test test test test test test test test junk",
         account_index=0,
     )
+    monkeypatch.setattr(wallet, "_request", fake_request)
 
     with pytest.raises(WDKServiceError, match="bad request"):
-        wallet.ensure_wallet_loaded()
+        await wallet.ensure_wallet_loaded()

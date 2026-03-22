@@ -264,20 +264,20 @@ class BuyerAgent:
         self._last_nonce = nonce
         return nonce
 
-    def _submit_buyer_deposit(self, request_id: str, amount: int) -> str | None:
+    async def _submit_buyer_deposit(self, request_id: str, amount: int) -> str | None:
         """Submit buyer-funded deposit tx before the gateway call."""
         settlement_addr = os.getenv("SETTLEMENT_CONTRACT_ADDRESS", "")
         token_addr = os.getenv("PAYMENT_TOKEN_ADDRESS", "")
 
         if self._wdk_wallet and settlement_addr and token_addr:
             try:
-                self._wdk_wallet.ensure_wallet_loaded()
-                self._wdk_wallet.approve(
+                await self._wdk_wallet.ensure_wallet_loaded()
+                await self._wdk_wallet.approve(
                     spender=settlement_addr,
                     amount=amount,
                     token_address=token_addr,
                 )
-                return self._wdk_wallet.deposit(
+                return await self._wdk_wallet.deposit(
                     request_id=request_id,
                     amount=amount,
                     settlement_contract=settlement_addr,
@@ -378,7 +378,7 @@ class BuyerAgent:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             # Step 1: Buyer-funded on-chain deposit (if chain env is configured)
             try:
-                deposit_tx_hash = self._submit_buyer_deposit(request_id_hint, max_price_int)
+                deposit_tx_hash = await self._submit_buyer_deposit(request_id_hint, max_price_int)
             except Exception as e:
                 return BuyerResult(
                     request_id=request_id_hint,

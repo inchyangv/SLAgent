@@ -156,7 +156,7 @@ def submit_deposit(
         return {"tx_hash": None, "mode": "error", "error": str(e)}
 
 
-def settle_request(
+async def settle_request(
     *,
     request_id: str,
     mandate_id: str,
@@ -199,9 +199,9 @@ def settle_request(
                 payout=payout,
                 receipt_hash=receipt_hash_bytes,
             )
-            gateway_sig_hex = gateway_wallet.sign_bytes(Web3.to_hex(digest))
+            gateway_sig_hex = await gateway_wallet.sign_bytes(Web3.to_hex(digest))
             gateway_sig = bytes.fromhex(gateway_sig_hex[2:] if gateway_sig_hex.startswith("0x") else gateway_sig_hex)
-            gateway_address = gateway_wallet.ensure_wallet_loaded()
+            gateway_address = await gateway_wallet.ensure_wallet_loaded()
         else:
             gateway_sig = client.sign_settlement(
                 mandate_id=mandate_id_bytes,

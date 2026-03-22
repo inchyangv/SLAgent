@@ -23,15 +23,15 @@ class FakeWDKWallet:
         self._address = "0x1111111111111111111111111111111111111111"
         self.calls: list[tuple[str, dict[str, object]]] = []
 
-    def ensure_wallet_loaded(self) -> str:
+    async def ensure_wallet_loaded(self) -> str:
         self.calls.append(("load", {}))
         return self._address
 
-    def approve(self, **kwargs) -> str:
+    async def approve(self, **kwargs) -> str:
         self.calls.append(("approve", kwargs))
         return "0xapprove"
 
-    def deposit(self, **kwargs) -> str:
+    async def deposit(self, **kwargs) -> str:
         self.calls.append(("deposit", kwargs))
         return f"0xdeposit_{len([c for c in self.calls if c[0] == 'deposit'])}"
 

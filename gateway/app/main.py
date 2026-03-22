@@ -627,7 +627,7 @@ async def call_endpoint(request: Request) -> JSONResponse:
     )
 
     # Step 1: Settle (distribute payout/refund) from already-deposited escrow
-    settlement_result = settle_request(
+    settlement_result = await settle_request(
         request_id=request_id,
         mandate_id=mandate_id,
         buyer=buyer,

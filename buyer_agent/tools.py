@@ -182,12 +182,12 @@ class ToolChainExecutor:
     def _wallet_mode(self) -> str:
         return "wdk_sidecar" if self.wallet else "mock_no_wallet"
 
-    def _resolve_buyer_address(self) -> str:
+    async def _resolve_buyer_address(self) -> str:
         if self.wallet:
-            return self.wallet.ensure_wallet_loaded()
+            return await self.wallet.ensure_wallet_loaded()
         return os.getenv("BUYER_ADDRESS", "0x" + "1" * 40)
 
-    def _submit_deposit(self, *, request_id: str, amount: int) -> str | None:
+    async def _submit_deposit(self, *, request_id: str, amount: int) -> str | None:
         if not self.wallet:
             return None
 
@@ -196,24 +196,24 @@ class ToolChainExecutor:
         if not settlement_addr or not token_addr:
             return None
 
-        buyer_address = self.wallet.ensure_wallet_loaded()
-        self.wallet.approve(
+        buyer_address = await self.wallet.ensure_wallet_loaded()
+        await self.wallet.approve(
             spender=settlement_addr,
             amount=amount,
             token_address=token_addr,
         )
-        return self.wallet.deposit(
+        return await self.wallet.deposit(
             request_id=request_id,
             amount=amount,
             settlement_contract=settlement_addr,
             buyer_address=buyer_address,
         )
 
-    def _build_mandate_for_tool(self, tool: ToolDef) -> dict[str, Any]:
+    async def _build_mandate_for_tool(self, tool: ToolDef) -> dict[str, Any]:
         from gateway.app.offers import get_offer
 
         offer = get_offer(tool.offer_id)
-        buyer_address = self._resolve_buyer_address()
+        buyer_address = await self._resolve_buyer_address()
         seller_address = os.getenv("SELLER_ADDRESS", "0x" + "2" * 40)
 
         if offer:
@@ -263,13 +263,13 @@ class ToolChainExecutor:
                 logger.warning("Mandate registration failed: %s", exc)
         return mandate.get("mandate_id")
 
-    def _wallet_status(self) -> dict[str, Any]:
+    async def _wallet_status(self) -> dict[str, Any]:
         if not self.wallet:
             return {}
 
         address = ""
         try:
-            address = self.wallet.ensure_wallet_loaded()
+            address = await self.wallet.ensure_wallet_loaded()
         except Exception as exc:
             logger.warning("WDK wallet status unavailable: %s", exc)
 
@@ -312,7 +312,7 @@ class ToolChainExecutor:
                 status=reason.split(":")[0].lower(),
             )
 
-        mandate = self._build_mandate_for_tool(tool)
+        mandate = await self._build_mandate_for_tool(tool)
         mandate_id = await self._register_mandate(mandate)
         request_id = f"{self._chain_id}_step_{step_num:02d}"
 
@@ -327,8 +327,8 @@ class ToolChainExecutor:
 
         deposit_tx_hash = None
         try:
-            wallet_address = self._resolve_buyer_address()
-            deposit_tx_hash = self._submit_deposit(request_id=request_id, amount=price)
+            wallet_address = await self._resolve_buyer_address()
+            deposit_tx_hash = await self._submit_deposit(request_id=request_id, amount=price)
         except Exception as exc:
             logger.warning("Step %d (%s): deposit submission failed: %s", step_num, tool.tool_id, exc)
 
@@ -433,7 +433,7 @@ class ToolChainExecutor:
             budget_initial=self.budget_mgr.config.budget_tokens,
             budget_remaining=self.budget_mgr.remaining,
             budget_config=asdict(self.budget_mgr.config),
-            wallet_status=self._wallet_status(),
+            wallet_status=await self._wallet_status(),
             completed=abort_reason is None,
             abort_reason=abort_reason,
         )

@@ -226,19 +226,20 @@ def test_buyer_result_dataclass():
     assert result.error is None
 
 
-def test_submit_buyer_deposit_prefers_wdk(monkeypatch):
+@pytest.mark.asyncio
+async def test_submit_buyer_deposit_prefers_wdk(monkeypatch):
     calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
     class FakeWDKWallet:
-        def ensure_wallet_loaded(self) -> str:
+        async def ensure_wallet_loaded(self) -> str:
             calls.append(("load", (), {}))
             return "0x1111111111111111111111111111111111111111"
 
-        def approve(self, **kwargs):
+        async def approve(self, **kwargs):
             calls.append(("approve", (), kwargs))
             return "0xapprove"
 
-        def deposit(self, **kwargs):
+        async def deposit(self, **kwargs):
             calls.append(("deposit", (), kwargs))
             return "0xdeposit"
 
@@ -251,7 +252,7 @@ def test_submit_buyer_deposit_prefers_wdk(monkeypatch):
         buyer_private_key=None,
     )
 
-    tx_hash = agent._submit_buyer_deposit("req_test_001", 100000)
+    tx_hash = await agent._submit_buyer_deposit("req_test_001", 100000)
 
     assert tx_hash == "0xdeposit"
     assert [entry[0] for entry in calls] == ["load", "approve", "deposit"]
@@ -259,9 +260,10 @@ def test_submit_buyer_deposit_prefers_wdk(monkeypatch):
     assert calls[2][2]["request_id"] == "req_test_001"
 
 
-def test_submit_buyer_deposit_falls_back_after_wdk_error(monkeypatch):
+@pytest.mark.asyncio
+async def test_submit_buyer_deposit_falls_back_after_wdk_error(monkeypatch):
     class BrokenWDKWallet:
-        def ensure_wallet_loaded(self) -> str:
+        async def ensure_wallet_loaded(self) -> str:
             raise RuntimeError("sidecar unavailable")
 
     monkeypatch.setattr("buyer_agent.client.WDKWallet.from_env", lambda **_: BrokenWDKWallet())
@@ -274,7 +276,7 @@ def test_submit_buyer_deposit_falls_back_after_wdk_error(monkeypatch):
     )
     monkeypatch.setattr(agent, "_init_buyer_chain", lambda: False)
 
-    assert agent._submit_buyer_deposit("req_test_001", 100000) is None
+    assert await agent._submit_buyer_deposit("req_test_001", 100000) is None
 
 
 # ── Negotiation tests ────────────────────────────────────────────────────────

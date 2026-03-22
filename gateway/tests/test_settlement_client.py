@@ -40,9 +40,10 @@ def test_submit_deposit_with_invalid_buyer():
     assert result["mode"] == "mock"
 
 
-def test_settle_request_mock_mode():
+@pytest.mark.asyncio
+async def test_settle_request_mock_mode():
     """settle_request returns mock result when no chain configured."""
-    result = settle_request(
+    result = await settle_request(
         request_id="req_test_003",
         mandate_id="mandate_test",
         buyer="0x" + "11" * 20,
@@ -56,7 +57,8 @@ def test_settle_request_mock_mode():
     assert result["tx_hash"] is None
 
 
-def test_deposit_then_settle_sequence():
+@pytest.mark.asyncio
+async def test_deposit_then_settle_sequence():
     """Deposit and settle can be called in sequence without errors."""
     dep = submit_deposit(
         request_id="req_seq_001",
@@ -65,7 +67,7 @@ def test_deposit_then_settle_sequence():
     )
     assert dep["mode"] == "mock"
 
-    settle = settle_request(
+    settle = await settle_request(
         request_id="req_seq_001",
         mandate_id="mandate_seq",
         buyer="0x" + "11" * 20,
@@ -77,16 +79,17 @@ def test_deposit_then_settle_sequence():
     assert settle["tx_hash"] is None
 
 
-def test_settle_request_prefers_wdk_signature(monkeypatch):
+@pytest.mark.asyncio
+async def test_settle_request_prefers_wdk_signature(monkeypatch):
     import gateway.app.settlement_client as sc
 
     captured: dict[str, bytes] = {}
 
     class FakeWallet:
-        def ensure_wallet_loaded(self) -> str:
+        async def ensure_wallet_loaded(self) -> str:
             return "0x3333333333333333333333333333333333333333"
 
-        def sign_bytes(self, payload_hex: str) -> str:
+        async def sign_bytes(self, payload_hex: str) -> str:
             assert payload_hex.startswith("0x")
             return "0x" + "11" * 65
 
@@ -103,7 +106,7 @@ def test_settle_request_prefers_wdk_signature(monkeypatch):
     monkeypatch.setattr(sc, "get_settlement_client", lambda: FakeClient())
     monkeypatch.setattr(sc, "_get_gateway_wdk_wallet", lambda: FakeWallet())
 
-    result = sc.settle_request(
+    result = await sc.settle_request(
         request_id="req_test_004",
         mandate_id="mandate_test",
         buyer="0x" + "11" * 20,
