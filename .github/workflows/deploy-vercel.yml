@@ -1,0 +1,72 @@
+name: Deploy Frontend (Vercel)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/deploy-vercel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Verify Vercel config
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "Missing secret: VERCEL_TOKEN"
+            exit 1
+          fi
+          if [ -z "${{ vars.VERCEL_ORG_ID }}" ]; then
+            echo "Missing variable: VERCEL_ORG_ID"
+            exit 1
+          fi
+          if [ -z "${{ vars.VERCEL_DASHBOARD_PROJECT_ID }}" ]; then
+            echo "Missing variable: VERCEL_DASHBOARD_PROJECT_ID"
+            exit 1
+          fi
+
+      - name: Pull Vercel environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_DASHBOARD_PROJECT_ID }}
+        run: pnpm dlx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build (Vercel)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_DASHBOARD_PROJECT_ID }}
+        run: pnpm dlx vercel@latest build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy to Vercel Production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_DASHBOARD_PROJECT_ID }}
+        run: pnpm dlx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"

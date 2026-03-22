@@ -1,0 +1,83 @@
+name: Deploy Contracts (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      broadcast:
+        description: "Broadcast deployment transaction"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Verify deploy config
+        run: |
+          if [ -z "${{ secrets.CONTRACT_DEPLOYER_PRIVATE_KEY }}" ]; then
+            echo "Missing secret: CONTRACT_DEPLOYER_PRIVATE_KEY"
+            exit 1
+          fi
+          if [ -z "${{ secrets.CHAIN_RPC_URL }}" ]; then
+            echo "Missing secret: CHAIN_RPC_URL"
+            exit 1
+          fi
+
+      - name: Dry run deployment
+        if: ${{ !inputs.broadcast }}
+        env:
+          PRIVATE_KEY: ${{ secrets.CONTRACT_DEPLOYER_PRIVATE_KEY }}
+          GATEWAY_ADDRESS: ${{ secrets.GATEWAY_ADDRESS }}
+          RESOLVER_ADDRESS: ${{ secrets.RESOLVER_ADDRESS }}
+          TOKEN_ADDRESS: ${{ secrets.TOKEN_ADDRESS }}
+          DISPUTE_WINDOW_SECONDS: ${{ vars.DISPUTE_WINDOW_SECONDS }}
+          BOND_AMOUNT: ${{ vars.BOND_AMOUNT }}
+          MINT_TO_GATEWAY: ${{ vars.MINT_TO_GATEWAY }}
+          APPROVE_MAX: ${{ vars.APPROVE_MAX }}
+          OPTIMIZER_RUNS: ${{ vars.OPTIMIZER_RUNS }}
+        run: |
+          RUNS="${OPTIMIZER_RUNS:-1}"
+          forge script script/DeploySlaPayV2.s.sol:DeploySlaPayV2 \
+            --rpc-url "${{ secrets.CHAIN_RPC_URL }}" \
+            --optimize \
+            --optimizer-runs "$RUNS" \
+            --via-ir \
+            -vvvv
+
+      - name: Broadcast deployment
+        if: ${{ inputs.broadcast }}
+        env:
+          PRIVATE_KEY: ${{ secrets.CONTRACT_DEPLOYER_PRIVATE_KEY }}
+          GATEWAY_ADDRESS: ${{ secrets.GATEWAY_ADDRESS }}
+          RESOLVER_ADDRESS: ${{ secrets.RESOLVER_ADDRESS }}
+          TOKEN_ADDRESS: ${{ secrets.TOKEN_ADDRESS }}
+          DISPUTE_WINDOW_SECONDS: ${{ vars.DISPUTE_WINDOW_SECONDS }}
+          BOND_AMOUNT: ${{ vars.BOND_AMOUNT }}
+          MINT_TO_GATEWAY: ${{ vars.MINT_TO_GATEWAY }}
+          APPROVE_MAX: ${{ vars.APPROVE_MAX }}
+          OPTIMIZER_RUNS: ${{ vars.OPTIMIZER_RUNS }}
+        run: |
+          RUNS="${OPTIMIZER_RUNS:-1}"
+          forge script script/DeploySlaPayV2.s.sol:DeploySlaPayV2 \
+            --rpc-url "${{ secrets.CHAIN_RPC_URL }}" \
+            --optimize \
+            --optimizer-runs "$RUNS" \
+            --via-ir \
+            --broadcast \
+            -vvvv

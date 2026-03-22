@@ -129,6 +129,16 @@ docs/               submission, architecture, API, security notes
 - A2A/AP2 envelope endpoints remain available under `gateway/app/a2a/`.
 - Gemini negotiation/policy layers are optional and fail open to deterministic logic.
 
+## CI/CD
+
+- CI: `.github/workflows/ci.yml`
+- Frontend deploy (Vercel): `.github/workflows/deploy-vercel.yml`
+- Backend deploy (Railway): `.github/workflows/deploy-railway.yml`
+- Contracts manual deploy: `.github/workflows/deploy-contracts-manual.yml`
+
+Setup details and required secrets/variables:
+- `docs/CICD.md`
+
 ## License
 
 MIT

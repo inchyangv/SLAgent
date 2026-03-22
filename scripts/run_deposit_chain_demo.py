@@ -13,8 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from shared.env import bootstrap_env  # noqa: E402
 from gateway.app.demo_keys import inject_demo_env  # noqa: E402
 
+bootstrap_env()
 inject_demo_env()
 
 from buyer_agent.tools import BudgetConfig, ToolChainExecutor, load_tool_catalog  # noqa: E402
@@ -57,7 +59,7 @@ async def run_demo(
     buyer_address = os.getenv("BUYER_ADDRESS", "").strip() or None
     wallet = WDKWallet.from_env(role="buyer", expected_address=buyer_address)
     if wallet:
-        address = wallet.ensure_wallet_loaded()
+        address = await wallet.ensure_wallet_loaded()
         print(f"WDK wallet ready:")
         print(f"  address:       {address}")
         print(f"  service_url:   {wallet.service_url}")

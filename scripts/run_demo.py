@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import time
@@ -57,7 +58,7 @@ def _maybe_submit_deposit(request_id: str, buyer_address: str) -> str | None:
         max_price=MAX_PRICE,
         buyer_private_key=buyer_private_key,
     )
-    return agent._submit_buyer_deposit(request_id, int(MAX_PRICE))
+    return asyncio.run(agent._submit_buyer_deposit(request_id, int(MAX_PRICE)))
 
 
 def run_scenario(client: httpx.Client, scenario: dict) -> dict | None:

@@ -1,0 +1,84 @@
+name: Deploy Backend (Railway)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gateway/**"
+      - "seller/**"
+      - "wdk-service/**"
+      - "shared/**"
+      - "buyer_agent/**"
+      - "facilitator/**"
+      - "pyproject.toml"
+      - "package.json"
+      - ".github/workflows/deploy-railway.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-railway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [gateway, seller, wdk]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Resolve target service
+        run: |
+          case "${{ matrix.target }}" in
+            gateway) SERVICE="${{ vars.RAILWAY_SERVICE_GATEWAY }}" ;;
+            seller) SERVICE="${{ vars.RAILWAY_SERVICE_SELLER }}" ;;
+            wdk) SERVICE="${{ vars.RAILWAY_SERVICE_WDK }}" ;;
+            *) echo "Unknown target: ${{ matrix.target }}" && exit 1 ;;
+          esac
+
+          if [ -z "$SERVICE" ]; then
+            echo "Missing Railway service variable for target '${{ matrix.target }}'"
+            exit 1
+          fi
+
+          echo "SERVICE=$SERVICE" >> "$GITHUB_ENV"
+
+      - name: Verify Railway config
+        run: |
+          if [ -z "${{ secrets.RAILWAY_TOKEN }}" ]; then
+            echo "Missing secret: RAILWAY_TOKEN"
+            exit 1
+          fi
+          if [ -z "${{ vars.RAILWAY_PROJECT_ID }}" ]; then
+            echo "Missing variable: RAILWAY_PROJECT_ID"
+            exit 1
+          fi
+
+      - name: Deploy ${{ matrix.target }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
+        run: |
+          ENV_NAME="${RAILWAY_ENVIRONMENT:-production}"
+          railway up \
+            --ci \
+            --detach \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$ENV_NAME" \
+            --service "$SERVICE" \
+            .

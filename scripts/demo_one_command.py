@@ -43,6 +43,11 @@ if _project_root not in sys.path:
 
 import httpx  # noqa: E402
 
+# Load repo-root .env first, then inject demo keys.
+from shared.env import bootstrap_env  # noqa: E402
+
+bootstrap_env()
+
 # Inject demo keys before anything else
 from gateway.app.demo_keys import inject_demo_env  # noqa: E402
 
