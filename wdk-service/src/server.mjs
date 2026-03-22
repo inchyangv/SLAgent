@@ -20,6 +20,8 @@ const DEFAULT_SETTLEMENT_ADDRESS =
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 const AUTH_TOKEN = process.env.WDK_AUTH_TOKEN || "";
+let isShuttingDown = false;
+const activeRequests = new Set();
 
 // --- Metrics counters ---
 const metrics = {
@@ -66,6 +68,17 @@ app.use((req, res, next) => {
     metricsIncr(req.method, req.path, res.statusCode);
     metricsRecordDuration(req.method, req.path, durationMs);
   });
+  next();
+});
+
+// Graceful shutdown guard — reject new requests when shutting down (exempt /health)
+app.use((req, res, next) => {
+  if (isShuttingDown && req.path !== "/health") {
+    return res.status(503).json({ error: "service shutting down" });
+  }
+  activeRequests.add(req);
+  res.on("finish", () => activeRequests.delete(req));
+  res.on("close", () => activeRequests.delete(req));
   next();
 });
 
@@ -189,12 +202,18 @@ function getWalletSigner(record) {
 }
 
 async function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
-    }),
-  ]);
+  let timerId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timerId); // fix: clear timer to prevent leak on success
+    return result;
+  } catch (err) {
+    clearTimeout(timerId);
+    throw err;
+  }
 }
 
 app.get("/health", async (_req, res) => {
@@ -505,6 +524,28 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`wdk-service listening on http://localhost:${PORT}`);
 });
+
+async function gracefulShutdown(signal) {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event: "shutdown", signal }));
+  isShuttingDown = true;
+
+  // Stop accepting new connections
+  server.close();
+
+  // Wait for in-flight requests (max 10s)
+  const deadline = Date.now() + 10_000;
+  while (activeRequests.size > 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  if (activeRequests.size > 0) {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), event: "forced_shutdown", pending: activeRequests.size }));
+  }
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
