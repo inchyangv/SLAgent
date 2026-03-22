@@ -4,6 +4,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ReceiptsPage } from './pages/ReceiptsPage'
 import { DisputesPage } from './pages/DisputesPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { HistoryPage } from './pages/HistoryPage'
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/receipts" element={<ReceiptsPage />} />
           <Route path="/disputes" element={<DisputesPage />} />
+          <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>

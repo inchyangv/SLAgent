@@ -60,9 +60,13 @@ export async function fetchEvents(
   gatewayUrl: string,
   kind?: string,
   limit = 80,
+  requestId?: string,
+  mandateId?: string,
 ): Promise<{ events: Event[] }> {
   const params = new URLSearchParams({ limit: String(limit) })
   if (kind) params.set('kind', kind)
+  if (requestId) params.set('request_id', requestId)
+  if (mandateId) params.set('mandate_id', mandateId)
   return apiFetch<{ events: Event[] }>(`${gatewayUrl}/v1/events?${params}`)
 }
 

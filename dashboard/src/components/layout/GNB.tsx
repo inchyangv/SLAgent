@@ -10,6 +10,7 @@ const navLinks = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/receipts', label: 'Receipts' },
   { to: '/disputes', label: 'Disputes' },
+  { to: '/history', label: 'History' },
   { to: '/settings', label: 'Settings' },
 ]
 

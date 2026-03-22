@@ -19,6 +19,7 @@ import { MandateList } from '../components/dashboard/MandateList'
 import { SellerCapabilities } from '../components/dashboard/SellerCapabilities'
 import { ActivityLog } from '../components/dashboard/ActivityLog'
 import { LatencyChart, PayoutChart, PassFailChart } from '../components/dashboard/Charts'
+import { SimulatorControls } from '../components/dashboard/SimulatorControls'
 import type { SimPreset } from '../types'
 
 const PRESET_STYLES: Record<SimPreset, { active: string; label: string }> = {
@@ -191,10 +192,13 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* ─── Autopilot ─── */}
+      {/* ─── Autopilot + Simulator ─── */}
       <section>
-        <SectionTitle>SLA Evaluator</SectionTitle>
-        <AutopilotWidget />
+        <SectionTitle>SLA Evaluator & Simulator</SectionTitle>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <AutopilotWidget />
+          <SimulatorControls />
+        </div>
       </section>
 
       {/* ─── Negotiation + Seller Caps ─── */}

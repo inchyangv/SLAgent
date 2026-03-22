@@ -21,1039 +21,96 @@ A ticket is DONE only when:
 
 ---
 
-## T-000 — Repo Bootstrap & Standards
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** none
+# Completed Milestones (M0–M4 + Track Add-ons)
 
-### Description
-Initialize repository structure and engineering standards so all subsequent tickets can be executed without churn.
+아래 티켓들은 모두 **DONE**. 상세 내용은 `git log`과 각 파일에서 확인.
 
-### Tasks
-- Create directory structure: `contracts/`, `gateway/`, `dashboard/`, `docs/`
-- Add root README with quickstart
-- Add basic tooling:
-    - Python: `pyproject.toml` (ruff, mypy), pytest
-    - Solidity: Hardhat (TypeScript) or Foundry (choose one)
-    - Node: package manager lockfile
-- Add `.editorconfig`, `.gitignore`
-- Add CI config (GitHub Actions) to run:
-    - Python lint + tests
-    - Solidity tests
-- Add environment templates:
-    - `.env.example` for gateway and dashboard
+## M0 — Foundation
 
-### Acceptance Criteria
-- Clean repo layout exists and matches PROJECT.md target layout
-- CI passes on a no-op run
-- Local quickstart documented in README
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-000 | Repo Bootstrap & Standards | contracts/, gateway/, dashboard/, CI, pyproject.toml |
+| T-001 | Choose Chain + Token Strategy | SKALE Sepolia, SLAT ERC20 (6 decimals) |
 
-### Deliverables
-- repo structure + configs + README
+## M1 — Core Contracts
 
-### Completion Notes
-- Created: contracts/, gateway/, dashboard/, docs/, facilitator/, scripts/, .github/workflows/
-- Tooling: pyproject.toml (ruff/mypy/pytest), foundry.toml, package.json
-- CI: .github/workflows/ci.yml (Python lint+test, Solidity build+test)
-- Configs: .gitignore, .editorconfig, .env.example files
-- README.md with quickstart
-- Validate: `pytest gateway/tests/ -v`
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-010 | Settlement Contract (Split + Refund) | contracts/src/SLASettlement.sol, 9 tests |
+| T-011 | Dispute Contract (Escrow + Delay) | PENDING→DISPUTED→FINALIZED, 18 tests |
 
----
+## M1.5 — Schemas & Gateway
 
-## T-001 — Choose Chain + Token Strategy (MVP)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-000
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-020 | SLA Mandate & Receipt Schemas | docs/API.md, gateway/app/hashing.py, 7 test vectors |
+| T-030 | Gateway Skeleton (FastAPI) | /v1/call, /v1/health, /v1/receipts, TTFT/latency |
+| T-031 | Deterministic Validator: JSON Schema | validators/json_schema.py, invoice_v1, 8 tests |
+| T-032 | Pricing Engine (Base + Bonus) | gateway/app/pricing.py, latency tiers |
 
-### Description
-Define how value moves in the demo: which network, which token, and how decimals are handled.
+## M2 — Payment & Settlement Integration
 
-### Tasks
-- Pick SKALE Base Sepolia (BITE v2 Sandbox 2) RPC used for demo
-- Decide token type:
-    - simplest: deploy an ERC20 mock token with fixed decimals
-- Document decimals and amount units in docs
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-040 | x402 Payment Gating | 402 challenge flow |
+| T-041 | Facilitator Service (Self-hosted) | facilitator/settlement.py |
+| T-050 | Settlement Integration: Gateway → Contract | gateway/app/settlement_client.py |
 
-### Acceptance Criteria
-- `docs/ARCHITECTURE.md` includes chain + token decisions
-- Amount unit conventions are defined and consistent
+## M3 — Demo & Polish
 
-### Deliverables
-- docs update + optional token contract scaffold
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-060 | Seller Service (Demo Endpoint) | seller/main.py, fast/slow/invalid |
+| T-070 | Dashboard (Minimal) | dashboard/ React app |
+| T-080 | Dispute UX & Resolver Script | scripts/resolve_dispute.py |
+| T-090 | End-to-End Demo Script | scripts/run_demo.py, 3 scenarios |
+| T-100 | Security Notes & Threat Model | docs/SECURITY.md |
+| T-110 | Packaging & Submission Checklist | DORAHACKS.md |
 
-### Completion Notes
-- SKALE Base Sepolia (BITE v2 Sandbox 2) (chain 103698795)
-- ERC20 mock token (SLAT, 6 decimals) — matches USDC convention
-- Amount conventions documented in docs/ARCHITECTURE.md
-- Integer arithmetic rules: round down, payout <= max_price invariant
+## M4 — Agent Architecture & Real Integration
 
----
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-119 | Agent Role Model Alignment | buyer_agent/, seller/, gateway roles |
+| T-120 | Gemini Seller Agent Service | seller/main.py (Gemini LLM) |
+| T-121 | Buyer Agent (Autonomous) | buyer_agent/client.py |
+| T-122 | Real x402 Integration | HMAC → real x402 |
+| T-123 | Fix On-chain Funds Flow | Buyer pays, not gateway |
+| T-124 | Separate Seller Identity | URL vs address split |
+| T-125 | Real On-chain Disputes | gateway + CLI dispute |
+| T-126 | Receipt Persistence (SQLite) | receipt DB |
+| T-127 | Google A2A/AP2 Message Layer | A2A envelope support |
+| T-128 | ERC-8004 Hook | orchestration hook |
+| T-129 | Mandate Negotiation + Enforcement | quote → accept → mandate |
+| T-130 | Seller Execution Request Contract | param passing fix |
+| T-131 | Receipt Timing Accuracy | TTFT + timestamps |
+| T-132 | Align Contract Interface vs Gateway ABI | deposit() mismatch fix |
 
-## T-010 — Settlement Contract (Core Split + Refund)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-001
+## Track Add-ons (DONE)
 
-### Description
-Implement the on-chain settlement primitive:
-- receive `max_price`
-- record settlement with receipt hash
-- pay seller + refund buyer
+| Ticket | Title | Key Artifacts |
+|--------|-------|---------------|
+| T-146 | x402 Agentic Tool Chain | buyer_agent/tools.py, wdk_wallet.py, 2+ paid steps |
+| T-147 | AP2 Intent → Authorization → Settlement | A2A/AP2 envelopes, auth failure demo |
+| T-148 | BITE v2 Encrypted Conditional Settlement | gateway/app/bite_v2.py, AES-GCM |
 
-### Tasks
-- Implement ERC20-based settlement contract:
-    - `settle(mandateId, requestId, buyer, seller, maxPrice, payout, receiptHash, gatewaySig)`
-    - verify: `payout <= maxPrice`, addresses non-zero
-    - transfer payout to seller
-    - transfer refund to buyer
-    - emit `Settled(...)`
-- Implement signature verification for gateway attestation:
-    - define `EIP-712` typed data or `eth_sign` style; pick one and document it
-- Add unit tests: payout/refund correctness, signature checks, replay protection
+## Stretch (DONE)
 
-### Acceptance Criteria
-- Contract passes all tests
-- Receipt hash appears in emitted event
-- Replay protection exists (cannot settle same requestId twice)
-
-### Deliverables
-- `contracts/src/Settlement.sol`
-- tests and deployment scripts
-
-### Completion Notes
-- contracts/src/SLASettlement.sol: settle() with ECDSA sig verification, replay protection, split+refund
-- contracts/src/SLAToken.sol: mock ERC20 (6 decimals)
-- contracts/test/SLASettlement.t.sol: 9 tests (full/partial/zero payout, replay, overflow, zero-addr, bad sig, event)
-- Validate: `cd contracts && forge test -v`
+| Ticket | Title |
+|--------|-------|
+| T-210 | Receipt Indexing (SQLite) + Search |
+| T-220 | Multi-attestation (Buyer + Seller + Gateway) |
 
 ---
 
-## T-011 — Dispute Contract (Minimal Escrow or Delay Mechanism)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-010
+# Milestone 5 — Demo Console & Simulation
 
-### Description
-Add an MVP dispute mechanism with bonding to deter spam. For MVP safety and simplicity, implement **delayed finalization**:
-- funds are escrowed at settle-time
-- seller withdrawal is allowed only after dispute window passes without dispute
-- dispute can freeze and require resolver final decision
-
-### Tasks
-- Extend settlement contract with:
-    - store settlement state: `PENDING`, `DISPUTED`, `FINALIZED`
-    - `openDispute(requestId)` requiring bond
-    - `resolveDispute(requestId, finalPayout)` callable by resolver
-    - `finalize(requestId)` callable after window expiration if not disputed
-- Decide how bonds are handled in MVP:
-    - keep bond in contract and pay/slash on resolution
-- Add tests: normal finalize, dispute open, resolver finalize
-
-### Acceptance Criteria
-- In normal path, seller can withdraw after window
-- Dispute path blocks withdrawal until resolved
-- Bond is required and accounted for
-
-### Deliverables
-- updated contract + tests + docs
-
-### Completion Notes
-- SLASettlement.sol extended: escrow-based delayed finalization, PENDING→DISPUTED→FINALIZED states
-- openDispute(requestId) with bond, resolveDispute(requestId, finalPayout) by resolver
-- finalize(requestId) after window expires without dispute
-- Bond returned to disputer if they win, slashed to resolver if they lose
-- 18 Foundry tests covering settle, finalize, dispute open/resolve paths
-- Validate: `cd contracts && forge test -v`
-
----
-
-## T-020 — SLA Mandate & Receipt Schemas (Canonical)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-000
-
-### Description
-Codify SLA Mandate and Receipt structures as JSON schema, plus hashing rules, so all components interoperate.
-
-### Tasks
-- Create `docs/API.md` with:
-    - Mandate JSON schema
-    - Receipt JSON schema
-    - Hashing rules: canonical JSON serialization, field order, etc.
-- Implement reference hashing in code:
-    - `mandate_id = keccak256(canonical_mandate_payload)`
-    - `receipt_hash = keccak256(canonical_receipt_payload)`
-- Add test vectors:
-    - known input → known hash output
-
-### Acceptance Criteria
-- Schema docs are unambiguous
-- Hashing outputs are deterministic across runs
-- At least 3 test vectors exist
-
-### Deliverables
-- `docs/API.md`
-- reference implementation code in gateway (or shared lib)
-
-### Completion Notes
-- docs/API.md: Mandate + Receipt JSON schemas, hashing rules, test vector references
-- gateway/app/hashing.py: canonical_json, keccak256, compute_mandate_id, compute_receipt_hash
-- gateway/tests/test_hashing.py: 7 test vectors (determinism, field exclusion, known hash)
-- Validate: `pytest gateway/tests/test_hashing.py -v`
-
----
-
-## T-030 — Gateway Skeleton (FastAPI Reverse Proxy)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-000
-
-### Description
-Build the FastAPI gateway that proxies to seller service, measures metrics, validates output, and produces receipts.
-
-### Tasks
-- FastAPI app with endpoints:
-    - `POST /v1/call` (main)
-    - `GET /v1/health`
-    - `GET /v1/receipts/{request_id}`
-- Config: seller upstream URL, chain RPC, contract address, token address
-- Streaming support:
-    - capture TTFT and overall latency
-- Basic request/response hashing
-
-### Acceptance Criteria
-- Gateway can proxy a request to a dummy seller service
-- TTFT/latency are measured and returned in a debug response
-- Receipt storage works (in-memory + optional file/db)
-
-### Deliverables
-- `gateway/app/main.py` etc.
-- tests for core paths
-
-### Completion Notes
-- gateway/app/main.py: FastAPI with POST /v1/call, GET /v1/health, GET /v1/receipts/{id}, GET /v1/receipts
-- gateway/app/config.py, models.py, metrics.py, receipt.py
-- TTFT/latency measurement via RequestMetrics
-- In-memory receipt storage with build_receipt + hashing
-- 6 gateway tests + 7 hashing tests + 1 smoke = 14 total
-- Validate: `pytest gateway/tests/ -v`
-
----
-
-## T-031 — Deterministic Validator: JSON Schema
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-030, T-020
-
-### Description
-Implement JSON schema validation as the MVP proof of correctness.
-
-### Tasks
-- Add validator module:
-    - load schema by `schema_id`
-    - validate response JSON
-    - return structured result object
-- Include at least one demo schema: `invoice_v1` or similar
-- Add tests: pass/fail cases
-
-### Acceptance Criteria
-- Validator deterministically returns pass/fail + error details
-- Receipt includes validator result block
-
-### Deliverables
-- `gateway/app/validators/json_schema.py`
-- schema files + tests
-
-### Completion Notes
-- gateway/app/validators/json_schema.py: validate_json_schema() with schema caching
-- gateway/app/validators/schemas/invoice_v1.json: demo schema
-- 8 tests: pass/fail cases, unknown schema, determinism
-- Validate: `pytest gateway/tests/test_validators.py -v`
-
----
-
-## T-032 — Pricing Engine (Base + Bonus Rules)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-030, T-020
-
-### Description
-Compute payout from mandate + measured metrics + validator result.
-
-### Tasks
-- Implement pricing engine:
-    - input: mandate, metrics, validation outcome
-    - output: payout, refund, rule_applied
-- Implement example latency tier rule set
-- Add unit tests for pricing decisions
-
-### Acceptance Criteria
-- Pricing decisions match PROJECT.md example
-- Receipt includes pricing block with rule_applied
-
-### Deliverables
-- `gateway/app/pricing.py` + tests
-
-### Completion Notes
-- gateway/app/pricing.py: compute_payout() with latency tier rules, fail-closed on error/validation
-- Integer-only arithmetic, payout <= max_price invariant, refund = max_price - payout
-- 9 tests matching PROJECT.md example: fast/mid/slow tiers, error, validation fail, invariants
-- Validate: `pytest gateway/tests/test_pricing.py -v`
-
----
-
-## T-040 — x402 Payment Gating (402 Challenge Flow)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-030, T-010
-
-### Description
-Implement the payment gating flow:
-- first call returns 402 with payment details
-- second call includes payment authorization and proceeds
-
-### Tasks
-- Implement x402-related middleware / handler:
-    - detect missing payment → respond 402
-    - verify payment token/authorization on paid request
-- For MVP, support a simplified local verification strategy if necessary, but align with x402 semantics.
-- Document how to run the flow end-to-end.
-
-### Acceptance Criteria
-- Unpaid request returns 402
-- Paid request succeeds
-- Gateway logs include payment reference
-
-### Deliverables
-- `gateway/app/x402.py`
-- `docs/DEMO.md` updated
-
-### Completion Notes
-- gateway/app/x402.py: 402 challenge response, HMAC-based payment verification (MVP)
-- gateway/app/main.py: integrated x402 gating + validation + pricing in /v1/call
-- docs/DEMO.md: x402 flow documentation with curl examples
-- 36 total tests passing (5 x402 + 6 gateway + 7 hashing + 9 pricing + 8 validators + 1 smoke)
-- Validate: `pytest gateway/tests/ -v`
-
----
-
-## T-041 — Facilitator Service (Self-hosted Minimal)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-040
-
-### Description
-Provide a minimal facilitator-compatible module/service that:
-- verifies payment artifacts
-- coordinates calling the settlement contract
-- abstracts chain submission from gateway
-
-### Tasks
-- Decide architecture:
-    - Option A: facilitator is a library inside gateway
-    - Option B: separate small service
-- Implement chain client and settlement call wrapper
-- Add retry logic and idempotency keys
-
-### Acceptance Criteria
-- Settlement tx submission works reliably
-- Duplicate submissions do not create double settlements
-
-### Deliverables
-- `facilitator/` code + docs
-
-### Completion Notes
-- facilitator/settlement.py: SettlementClient — sign_settlement, submit_settlement with idempotency
-- Architecture: library inside gateway (Option A)
-- Mock mode when no chain configured, real tx submission when RPC available
-- 5 tests: gateway address, signing, determinism, idempotency, mock mode
-- Validate: `pytest facilitator/tests/ -v`
-
----
-
-## T-050 — Settlement Integration: Gateway → Contract
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-010, T-032, T-041
-
-### Description
-After receiving seller response and producing receipt, gateway must submit settlement to contract and return final result to buyer.
-
-### Tasks
-- Implement:
-    - gateway signing of receipt hash
-    - settlement tx call with parameters
-- Store tx hash in receipt record
-- Return response to buyer with:
-    - request_id
-    - payout/refund amounts
-    - receipt_hash
-    - tx reference
-
-### Acceptance Criteria
-- A complete call produces an on-chain settlement event
-- Buyer receives response including tx hash and receipt id
-- Receipts are retrievable via API
-
-### Deliverables
-- `gateway/app/settlement_client.py`
-- integration tests (local chain or mocked)
-
-### Completion Notes
-- gateway/app/settlement_client.py: settle_request() bridges gateway to facilitator
-- main.py: integrated settlement signing + submission after receipt generation
-- Response now includes tx_hash, gateway_signature in receipt
-- pyproject.toml: added facilitator to packages
-- 41 total tests passing
-- Validate: `pytest gateway/tests/ facilitator/tests/ -v`
-
----
-
-## T-060 — Seller Service (Demo Endpoint)
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-000
-
-### Description
-Provide a demo seller endpoint to generate:
-- fast valid output
-- slow valid output
-- invalid output (schema fail)
-
-### Tasks
-- Implement a simple seller service:
-    - `POST /seller/call?mode=fast|slow|invalid`
-    - returns deterministic JSON
-- Add optional streaming simulation for TTFT testing
-
-### Acceptance Criteria
-- Modes reliably trigger different receipts:
-    - fast valid → full payout
-    - slow valid → partial bonus
-    - invalid → zero payout
-
-### Deliverables
-- `gateway/demo_seller/` (or separate `seller/`)
-
-### Completion Notes
-- gateway/demo_seller/main.py: POST /seller/call?mode=fast|slow|invalid
-- Fast: valid invoice ~100ms, Slow: valid invoice ~6s, Invalid: schema-fail response
-- Deterministic responses matching invoice_v1 schema
-- 6 tests covering all modes + health + default
-- Validate: `pytest gateway/tests/test_demo_seller.py -v`
-- Run: `uvicorn gateway.demo_seller.main:app --port 8001`
-
----
-
-## T-070 — Dashboard (Minimal, Must Show the Money)
-**Status:** DONE
-**Priority:** P1
-**Depends on:** T-050
-
-### Description
-Create a dashboard that visualizes:
-- request list
-- metrics
-- validation status
-- payout/refund
-- tx links / event references
-
-### Tasks
-- Implement a lightweight UI (Next.js or simple static + JS)
-- Add gateway endpoint to list recent receipts:
-    - `GET /v1/receipts?limit=…`
-- Display scenario filters
-
-### Acceptance Criteria
-- Human-readable page shows the three demo scenarios
-- Each row links to receipt JSON and tx hash
-
-### Deliverables
-- `dashboard/` + docs
-
-### Completion Notes
-- dashboard/index.html: static page with receipt table, stats cards, filter, detail modal
-- Connects to gateway API /v1/receipts, shows per-request metrics/validation/payout/refund
-- Click row to see full receipt JSON
-- Run: open dashboard/index.html in browser (or serve via any static server)
-
----
-
-## T-080 — Dispute UX & Resolver Script (MVP)
-**Status:** DONE
-**Priority:** P1  
-**Depends on:** T-011, T-070
-
-### Description
-Add minimal ability to open and resolve disputes for one example scenario.
-
-### Tasks
-- Add gateway endpoint:
-    - `POST /v1/disputes/open`
-- Add resolver script (CLI):
-    - `resolve --request_id ... --final_payout ...`
-- Update dashboard to show dispute state
-
-### Acceptance Criteria
-- Dispute can be opened and changes on-chain state
-- Resolver can finalize and unblock withdrawal
-
-### Deliverables
-- CLI + endpoints + docs
-
-### Completion Notes
-- POST /v1/disputes/open, POST /v1/disputes/resolve, GET /v1/disputes/{id}
-- scripts/resolve_dispute.py: CLI for open/resolve operations
-- MVP: in-memory dispute tracking, mock on-chain state
-- 47 total tests passing
-- Validate: `pytest gateway/tests/ facilitator/tests/ -v`
-
----
-
-## T-090 — End-to-End Demo Script
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** T-050, T-060
-
-### Description
-Produce a repeatable script that runs the three scenarios in sequence and prints the outputs.
-
-### Tasks
-- Implement `scripts/run_demo.py` that:
-    - calls gateway unpaid → expects 402
-    - retries paid → obtains response
-    - repeats for fast/slow/invalid
-    - prints: request_id, metrics, payout, refund, tx hash
-- Add a “one command demo” instruction in `docs/DEMO.md`
-
-### Acceptance Criteria
-- One command executes all scenarios reliably
-- Outputs match expected payout mapping
-
-### Deliverables
-- `scripts/run_demo.py`
-- `docs/DEMO.md`
-
-### Completion Notes
-- scripts/run_demo.py: runs 3 scenarios (fast/slow/invalid) with 402→paid flow
-- docs/DEMO.md: updated with one-command demo, dashboard, dispute instructions
-- Prints per-scenario metrics, payout, refund, receipt hash, summary table
-- Validate: start services, then `python scripts/run_demo.py`
-
----
-
-## T-100 — Security Notes & Threat Model (Hackathon-ready)
-**Status:** DONE
-**Priority:** P1  
-**Depends on:** T-050, T-011
-
-### Description
-Document realistic security assumptions and what MVP does/does not protect against.
-
-### Tasks
-- Write `docs/SECURITY.md` including:
-    - attestation trust model
-    - replay protection
-    - dispute griefing mitigations
-    - what can be cheated (and how future work would improve)
-- Add “assumptions” section in README
-
-### Acceptance Criteria
-- Security posture is explicit and defensible
-- Known limitations are stated plainly
-
-### Deliverables
-- `docs/SECURITY.md`
-
-### Completion Notes
-- docs/SECURITY.md: trust model, replay protection, dispute mechanism, known limitations
-- README.md: added security assumptions section
-- Covers: gateway trust, resolver centralization, HMAC vs x402, production recommendations
-
----
-
-## T-110 — Packaging & Submission Checklist
-**Status:** DONE
-**Priority:** P0  
-**Depends on:** All P0 tickets
-
-### Description
-Finalize what judges will see: clean docs, clean demo path, artifact links.
-
-### Tasks
-- Ensure README contains:
-    - what it is
-    - architecture diagram (ASCII ok)
-    - how to run demo
-- Provide:
-    - contract addresses (or deployment instructions)
-    - short pitch bullets for SKALE Base Sepolia (BITE v2 Sandbox 2) / Coinbase x402 / Google AP2
-- Add `docs/SUBMISSION.md` with:
-    - repo overview
-    - demo steps
-    - screenshots placeholders
-
-### Acceptance Criteria
-- A new developer can run the demo in ≤ 15 minutes
-- Submission doc contains all required hackathon links/info
-
-### Deliverables
-- `docs/SUBMISSION.md` + README final pass
-
-### Completion Notes
-- docs/SUBMISSION.md: full submission doc with repo overview, demo steps, track relevance
-- README.md: final pass with end-to-end demo instructions, submission link
-- Quick start < 5 minutes documented
-
----
-
-## Hackathon Criteria Gap Tickets (Must Be Real)
-These tickets close the gap between:
-- current MVP (deterministic demo seller + HMAC payment simulation)
-- hackathon judging criteria emphasizing **real LLM usage**, **realistic commerce flows**, and **partner integrations**.
-
----
-
-## T-119 — Agent Role Model Alignment (Buyer Agent / Seller Agent / Gateway)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-000, T-020, T-030
-
-### Description
-Agent 역할과 책임 경계를 코드/데모에 명확히 드러낸다.
-
-- **Buyer Agent**: seller discovery, SLA 협상(quote/mandate), 결제, receipt 검증, dispute
-- **Seller Agent/Service**: capabilities 공개, quote 제공, 실제 작업 수행(LLM: Gemini), 스키마 준수 출력
-- **Gateway**: 측정/검증(결정적), pricing, receipt 발급, 온체인 정산 제출
-
-LLM 사용 원칙:
-- **Gemini는 Buyer/Seller agent의 의사결정/생성에 사용**한다 (심사에서 AI 사용 증거가 남아야 함).
-- Gateway의 **검증/가격결정/정산 트랜잭션**은 결정적으로 유지한다 (LLM이 결정권을 가지지 않음).
-
-### Tasks
-- `docs/ARCHITECTURE.md`에 아래를 추가/정리:
-  - role definitions (MUST/SHOULD)
-  - trust boundary + who signs what (buyer/seller/gateway)
-  - sequence(협상→402/pay→실행→receipt→settlement→dispute)
-- `DEMO.md` 시나리오가 위 역할 명칭으로 일관되게 설명되도록 정리
-
-### Acceptance Criteria
-- 발표자가 "buyer agent는 이거, seller agent는 이거, gateway는 이거"를 코드 경로로 바로 가리킬 수 있음
-
-### Completion Notes
-- docs/ARCHITECTURE.md: Agent Roles & Trust Boundaries 섹션 추가 (역할별 MUST/MUST NOT, 서명 주체 표, trust boundary 다이어그램, e2e 시퀀스)
-- DEMO.md: 에이전트 역할 테이블에 코드 경로/LLM 사용 여부 추가
-- docs/DEMO.md: 역할 정의 문서 크로스 레퍼런스 추가
-- Validate: 136 tests passed
-
----
-
-## T-120 — Gemini Seller Agent Service (Real LLM + SLA Interface)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-030, T-031, T-119
-
-### Description
-더미 seller(`gateway/demo_seller`)를 대체해서, **Google Gemini API**로 실제 작업을 수행하는 Seller Agent/Service를 만든다.
-Seller 역할이 명확해야 한다:
-- capabilities 공개
-- (선택) quote(견적) 제공
-- call(실행)에서 Gemini로 결과 생성
-
-협상 단순화 옵션(권장):
-- 협상은 Buyer/Gateway 쪽에서 “mandate 초안/선택”을 만들고,
-- Seller는 이를 **그대로 수락(accept)** 하는 것으로 데모를 구성한다.
-- 즉 Seller는 “복잡한 협상 로직”이 아니라 “수락/거절 정책(최소)”만 갖는다.
-
-### Tasks
-- Seller 서비스 추가(폴더명은 `seller/` 권장) 또는 기존 seller를 분리:
-  - `GET /seller/capabilities`
-  - `POST /seller/quote` (선택: 오퍼를 seller가 제안하는 모델일 때만)
-  - `POST /seller/mandates/accept` (권장: buyer가 만든 mandate를 seller가 수락)
-  - `POST /seller/call`
-- Gemini API로 호출:
-  - `GEMINI_API_KEY`, `GEMINI_MODEL`
-- 출력 강제:
-  - `invoice_v1` JSON schema(`gateway/app/validators/schemas/invoice_v1.json`)를 통과하는 순수 JSON만 반환
-  - 실패 시: JSON 추출/정정 프롬프트 기반 재시도(최소 1~2회) 또는 명시적 실패
-- Seller identity:
-  - capabilities/quote에 `SELLER_ADDRESS`(EVM) 포함
-
-### Acceptance Criteria
-- `POST /seller/call`이 “LLM 생성 결과물”을 반환하고, gateway에서 schema validation을 통과한다
-- 협상 단계가 데모에 보이도록 아래 중 하나가 구현되어 있다:
-  - `capabilities/quote` (seller가 오퍼 제안)
-  - `capabilities` + `mandates/accept` (seller가 buyer 제안을 수락)
-- 데모 출력/로그에 Gemini 사용 증거(모델명, 요청/응답 요약 또는 usage 메타데이터)가 남는다
-
-### Completion Notes
-- seller/main.py: GET /seller/capabilities, POST /seller/mandates/accept, GET /seller/mandates 추가
-- capabilities: seller_address, llm_provider, llm_model, supported_schemas, endpoints 노출
-- mandates/accept: 지원 스키마 검증 후 수락, in-memory mandate 저장
-- seller/call: body에서도 mode 수신 가능 (gateway 호환), X-LLM-Model/X-LLM-Provider 헤더 추가
-- 28 seller tests (7 new), 143 total tests passed
-- Validate: `pytest seller/tests/ -v`
-
----
-
-## T-121 — Buyer Agent (Autonomous Buyer)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-040, T-090, T-119, T-120
-
-### Description
-Add a minimal "buyer agent" that behaves like an autonomous client:
-- discovers seller capabilities
-- negotiates an SLA (mandate) from seller quote **or buyer-side offer catalog**
-- handles `402` challenge
-- submits paid request
-- verifies receipts deterministically (schema + payout/refund invariants)
-- opens disputes when SLA is violated
-
-### Tasks
-- Implement a buyer agent CLI (folder `buyer_agent/` recommended):
-  - call seller `GET /seller/capabilities`
-  - 아래 중 하나로 mandate를 만든다:
-    - seller `POST /seller/quote` 기반으로 mandate 구성/수락, 또는
-    - buyer-side offer catalog(T-143)에서 SLA 오퍼를 선택해 mandate 구성
-  - (권장) seller `POST /seller/mandates/accept`로 최종 mandate를 “seller가 수락”했음을 남김(이력/증거)
-  - call gateway `/v1/call` with the selected mandate reference
-  - verify receipt invariants and print an auditable summary for the demo
-- **Must**: use **Google Gemini API** for negotiation strategy:
-  - draft requirements/constraints from user intent
-  - evaluate seller quote and decide accept/reject or counter-propose
-  - output a human-readable negotiation summary for the demo (what was agreed and why)
-
-### Acceptance Criteria
-- Running buyer agent demonstrates an agentic commerce flow end-to-end (negotiate → pay → proof)
-- Buyer agent refuses responses that fail invariants or schema (fail-closed)
-
-### Completion Notes
-- buyer_agent/client.py: discover_seller(), negotiate_mandate(), NegotiationResult 추가
-- buyer_agent/main.py: negotiation phase 출력 (seller capabilities, mandate, acceptance)
-- --seller-url 옵션 추가, mandate template matching PROJECT.md
-- 13 buyer agent tests (4 new negotiation tests), 147 total passed
-- Validate: `pytest buyer_agent/tests/ -v`
-
----
-
-## T-122 — Real x402 Integration (Replace HMAC Simulation)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-040
-
-### Description
-Replace `gateway/app/x402.py` HMAC token with a real x402-compatible payment authorization/verification flow suitable for judging ("commerce realism").
-
-### Tasks
-- Confirm target x402 spec + required headers/fields for the hackathon demo
-- Implement:
-  - unpaid request → `402` with `accepts` payload matching spec
-  - paid request → include proof/authorization per spec
-  - gateway verification of payment artifact
-- Add a compatibility mode:
-  - `PAYMENT_MODE=hmac|x402` so local dev can still run without keys
-- Add tests for:
-  - valid/invalid paid requests
-  - replay protection / nonce window
-
-### Acceptance Criteria
-- Paid request verification no longer relies on shared-secret HMAC
-- Demo script can exercise x402 mode with real proofs
-
-### Completion Notes
-- gateway supports `PAYMENT_MODE=hmac|x402` in `gateway/app/x402.py`
-- x402 mode currently verifies an EIP-712 authorization payload (replay-protected in-memory)
-- Tests: `gateway/tests/test_x402.py` covers both HMAC and x402 verification paths
-
-### Known Limitations (must address for realism)
-- Current x402 verification is not yet tied to an on-chain escrow/funds movement invariant (see T-123, T-132)
-
----
-
-## T-123 — Fix On-chain Funds Flow (Buyer Pays, Not Gateway)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-010, T-050, T-122
-
-### Description
-Current `SLASettlement.settle()` pulls funds from `msg.sender` (gateway tx sender), which is not commerce-realistic.
-Update the on-chain flow so **the buyer is the payer** (or the contract has escrowed funds from the buyer before settlement).
-
-### Tasks
-- Choose one:
-  - A) `deposit(requestId, buyer, amount)` by buyer, then `settle()` only distributes
-  - B) `permit`/meta-tx approach (buyer signature authorizes transfer)
-  - C) x402 payment transfers `max_price` directly to escrow, and `settle()` checks escrow balance
-- Update contract + gateway integration + tests accordingly
-- Ensure replay protection holds across deposit/settle
-- **필수 연결(현재 갭):**
-  - gateway가 `request_id`를 생성한 뒤 `submit_deposit()`을 먼저 호출하고, 성공 시에만 `submit_settlement()`을 호출
-  - deposit의 payer는 데모에서는 gateway EOA로 시작해도 되지만, 최종적으로는 buyer가 payer가 되도록 전환(permit/meta-tx 등)
-
-### Acceptance Criteria
-- On-chain accounting shows buyer funds `max_price` (not gateway custody)
-- Settlement distributes payout/refund from escrowed buyer funds
-
-### Completion Notes
-- SLASettlement.sol: deposit() + DEPOSITED→PENDING flow (기존)
-- facilitator/settlement.py: submit_deposit() (기존)
-- gateway/app/settlement_client.py: submit_deposit() 래퍼 추가, ABI 일치
-- gateway/app/main.py: /v1/call에서 deposit→settle 순서 연결, deposit_tx_hash/settle_tx_hash 응답 포함
-- Event ledger: chain.deposit_submitted 이벤트 기록
-- contracts/foundry.toml: evm_version cancun (OZ 5.5.0 mcopy 호환)
-- 신규 테스트: gateway/tests/test_settlement_client.py (4개), gateway 2개, facilitator 1개
-- Validate: `.venv/bin/python -m pytest gateway/tests/ facilitator/tests/ -v` + `cd contracts && forge test -v`
-
----
-
-## T-124 — Separate Seller Identity (URL vs Address)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-050
-
-### Description
-Gateway currently uses a seller upstream URL as the "seller" field, but on-chain settlement requires an EVM address.
-Introduce a proper `SELLER_ADDRESS` and include it in receipts and settlement calls.
-
-### Tasks
-- Add env: `SELLER_ADDRESS`
-- Remove fallback to URL/zero-address for on-chain settlement (require valid EVM address)
-- Update receipt fields and settlement params to always use EVM addresses
-- Update demo scripts and docs
-- Add validation: reject invalid addresses early
-
-### Acceptance Criteria
-- Live chain mode no longer normalizes seller/buyer to zero-address
-- On-chain payout goes to the configured seller address
-
-### Completion Notes
-- gateway/app/config.py: SELLER_ADDRESS env var
-- gateway/app/settlement_client.py: _normalize_addr() with checksum validation
-- Receipt/settlement always use EVM addresses, not URLs
-- Validate: `pytest gateway/tests/ -v`
-
----
-
-## T-125 — Real On-chain Disputes (Gateway + CLI)
-**Status:** DONE
-**Priority:** P1
-**Depends on:** T-011, T-080
-
-### Description
-Dispute endpoints currently keep an in-memory cache and submit tx from the gateway key.
-Align this with the role model:
-- buyer/disputer opens disputes and posts bonds
-- resolver resolves disputes
-- gateway provides APIs but should not impersonate buyer in live mode
-
-Implement actual calls:
-- `openDispute(requestId)`
-- `resolveDispute(requestId, finalPayout)`
-- `finalize(requestId)`
-
-### Tasks
-- Add contract ABI methods + chain submission in facilitator
-- Replace in-memory dispute truth with on-chain derived state (events) or persisted indexer/cache
-- Ensure correct caller identities for dispute flows
-- Update dashboard to show dispute status from chain events (or explicit sync/cache)
-- Add tests using a local anvil/fork or contract mock
-
-### Acceptance Criteria
-- Dispute open/resolve/finalize changes contract state on SKALE Base Sepolia (BITE v2 Sandbox 2)
-- Dashboard shows dispute state for at least one receipt
-
-### Completion Notes
-- gateway/app/settlement_client.py: submit_dispute_open, submit_dispute_resolve, submit_finalize
-- ABI includes openDispute, resolveDispute, finalize
-- Chain mode: real tx submission; mock mode: log-only
-- scripts/resolve_dispute.py: CLI for dispute operations
-- Validate: `pytest gateway/tests/ facilitator/tests/ -v`
-
----
-
-## T-126 — Receipt Persistence (SQLite) + Export
-**Status:** DONE
-**Priority:** P1
-**Depends on:** T-030, T-070
-
-### Description
-Receipt store supports optional SQLite persistence (via `RECEIPT_DB_PATH`) and JSONL export.
-
-### Tasks
-- Document:
-  - `RECEIPT_DB_PATH` usage
-  - `GET /v1/receipts/search` and `GET /v1/receipts/export`
-
-### Acceptance Criteria
-- Optional persistence works via `RECEIPT_DB_PATH`
-- Export endpoint works and is documented
-
----
-
-## T-127 — Partner Integration: Google A2A/AP2 Message Layer
-**Status:** DONE
-**Priority:** P1
-**Depends on:** T-020
-
-### Description
-Add an optional integration layer where mandates/receipts are encoded as explicit protocol messages (A2A/AP2 framing),
-so the demo isn't only "custom REST JSON".
-
-### Tasks
-- Implement/finish A2A semantics (not just framing):
-  - Mandate request/response must create/store a real mandate (see T-129)
-  - Receipt submission/ack must attach to real receipt IDs and tie into attestations
-  - Dispute open/resolve must map to live dispute flows (see T-125)
-- Add docs and a minimal demo script that uses the A2A envelope end-to-end
-
-### Acceptance Criteria
-- At least one end-to-end call can run via the AP2/A2A envelope path
-- Docs show the message formats clearly
-
-### Notes
-- A2A envelope framing exists in `gateway/app/a2a/envelope.py` and routes exist in `gateway/app/a2a/routes.py`,
-  but current handlers are mostly stubbed and do not enforce/store mandates or disputes.
-
----
-
-## T-128 — Partner Integration: ERC-8004 Hook (Orchestration)
-**Status:** DONE
-**Priority:** P2  
-**Depends on:** T-020, T-010
-
-### Description
-Add an ERC-8004-compatible orchestration hook (or minimal adapter) to show alignment with agent orchestration standards.
-
-### Tasks
-- Decide which minimal subset to support for the demo
-- Implement adapter contract/module and a demo call path
-- Document how it maps to mandate/receipt lifecycle
-
-### Acceptance Criteria
-- Repo contains a concrete artifact (code + demo) demonstrating ERC-8004 alignment
-
----
-
-## T-129 — Mandate Negotiation + Enforcement (No More DEFAULT_MANDATE)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-020, T-119, T-120, T-121
-
-### Description
-SLA를 "문서"가 아니라 "협상된 객체"로 만들고 gateway가 강제(enforce)한다.
-현재 gateway는 `/v1/call`에서 `DEFAULT_MANDATE`를 하드코딩으로 사용하고 `mandate_id`를 비워둔다.
-
-### Tasks
-- mandate 저장소 추가(인메모리 + 선택적으로 SQLite)
-- mandate 생성/수락 경로 추가:
-  - REST (예: `POST /v1/mandates`) 또는
-  - A2A (`/a2a/message`의 `slagent-402.mandate.request`)
-- `/v1/call`에서 `mandate_id`를 요구하고, unknown/expired mandate는 거절
-- receipt/settlement에 아래 필드 채우기:
-  - `mandate_id`, `buyer`, `seller`, `gateway`
-
-### Acceptance Criteria
-- demo에서 "협상된 mandate"가 보여야 하고, gateway가 그 mandate로 정산을 수행한다
-- receipt에 `mandate_id`가 항상 non-empty로 들어간다
-
-### Completion Notes
-- gateway/app/mandates.py: MandateStore (in-memory), register/get/list_all
-- gateway/app/main.py: POST /v1/mandates, GET /v1/mandates, GET /v1/mandates/{id}
-- /v1/call: mandate_id in body → lookup mandate, reject unknown; fallback to DEFAULT_MANDATE
-- receipt/settlement에 mandate_id, buyer, seller 필드 채워짐
-- 6 new gateway tests (mandate CRUD + call with mandate), 153 total passed
-- Validate: `pytest gateway/tests/ -v`
-
----
-
-## T-130 — Seller Execution Request Contract (Param Passing Fix)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-030, T-060, T-120
-
-### Description
-buyer→gateway→seller에서 “요청 파라미터(모드/입력/타임아웃)”가 누락 없이 전달되도록 실행 요청 스키마를 고정한다.
-현재는 gateway가 query params를 드랍할 수 있다.
-
-### Tasks
-- seller execution request의 canonical schema 정의 (예: `{mode, input, schema_id, ...}`)
-- gateway forwarder가 이 schema를 그대로 seller에 전달하도록 수정
-- **호환성 규칙 고정(중요):**
-  - gateway는 `/v1/call`의 `mode`(query 또는 body)를 seller로 전달해야 한다
-  - seller는 `mode`를 **query와 body 둘 다**에서 받을 수 있어야 한다 (데모/스크립트 호환)
-  - 기본값은 `mode=fast`
-- integration test 추가: `/v1/call`을 통해 slow/invalid 시나리오가 실제로 발생함을 보장
-
-### Acceptance Criteria
-- 데모에서 slow/invalid 시나리오가 “gateway를 거쳐서도” 재현된다
-- `seller/`(Gemini)와 `gateway.demo_seller` 둘 중 어떤 upstream을 붙여도, 동일한 요청(`mode=...`)으로 시나리오 재현이 된다
-
-### Completion Notes
-- gateway/app/main.py: /v1/call에서 mode를 query/body에서 추출, seller에 query+body 둘 다 전달
-- seller/main.py: mode를 query와 body 모두에서 수신 가능 (T-120에서 구현)
-- 2 new integration tests (mode forwarding from query, mode from body)
-- 155 total tests passed
-- Validate: `pytest gateway/tests/test_gateway.py -v`
-
----
-
-## T-131 — Receipt Timing Accuracy (TTFT + timestamps)
-**Status:** DONE
-**Priority:** P1
-**Depends on:** T-030
-
-### Description
-심사/데모에서 설득력 있는 metrics가 나오게 receipt 타임스탬프/TTFT 정의를 명확히 한다.
-현재 receipt timestamps는 동일 값으로 채워질 수 있다.
-
-### Tasks
-- `RequestMetrics`에서 실제 타임스탬프를 받아 receipt에 넣기
-- 스트리밍이 없다면 TTFT를 "first byte"로 정의하고 명시
-- (선택) seller 스트리밍 지원 시 실제 TTFT 측정
-
-### Acceptance Criteria
-- receipt metrics가 일관되고 방어 가능한 의미를 가진다
-
-### Completion Notes
-- gateway/app/receipt.py: build_receipt에 t_request_received/t_first_token/t_response_done 파라미터 추가
-- receipt timestamps가 RequestMetrics의 실제 epoch 값을 사용
-- TTFT 정의: "time to first response byte from seller" (non-streaming)
-- gateway/app/main.py: 두 build_receipt 호출에 실제 타임스탬프 전달
-- 155 total tests passed
-- Validate: `pytest gateway/tests/ -v`
-
----
-
-## T-132 — Align Contract Interface vs Gateway ABI (deposit() mismatch)
-**Status:** DONE
-**Priority:** P0
-**Depends on:** T-010, T-050, T-123
-
-### Description
-gateway settlement client ABI에 `deposit()`가 포함되어 있으나 컨트랙트에는 없다.
-buyer-pays 모델(T-123)을 구현하려면 ABI/컨트랙트가 정확히 일치해야 한다.
-
-### Tasks
-- 선택:
-  - contract에 `deposit()` 구현 + 테스트 + gateway 연동, 또는
-  - gateway ABI에서 `deposit()` 제거하고 다른 escrow 전략 채택
-- 통합 테스트: gateway가 사용하는 ABI가 배포된 바이트코드 인터페이스와 일치함을 검증
-
-### Acceptance Criteria
-- 데모 네트워크에서 ABI mismatch로 트랜잭션이 깨지지 않는다
-
-### Completion Notes
-- T-123에서 해결됨: contract와 gateway ABI가 deposit/settle/openDispute/resolveDispute/finalize 모두 일치
-- Contract: deposit(bytes32,address,uint256), settle(bytes32,bytes32,address,address,uint256,uint256,bytes32,bytes)
-- Gateway ABI: 동일한 시그니처
-- Validate: `cd contracts && forge test -v`
+해커톤 심사용 데모 콘솔, 시뮬레이션, 발표 UX 완성.
 
 ---
 
 ## T-133 — Receipt Multi-attestation (Buyer + Seller + Gateway) Demo Integration
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **Depends on:** T-119, T-120, T-121
 
@@ -1067,26 +124,27 @@ buyer-pays 모델(T-123)을 구현하려면 ABI/컨트랙트가 정확히 일치
 - Buyer Agent가 receipt 수신 후 `/v1/receipts/{id}/attest`로 buyer 서명 제출
 - Seller Agent/Service가 작업 완료 후 seller 서명 제출(또는 buyer가 seller 서명까지 받아서 제출)
 - Gateway가 자신의 서명을 receipt에 포함(`receipt.gateway` 및 `receipt.signatures`)하고, 검증 가능한 주소를 함께 노출
-- Dashboard에 “3자 서명 완료/검증 결과”를 표시
+- Dashboard에 "3자 서명 완료/검증 결과"를 표시
 - A2A 경로 사용 시 receipt.ack 메시지가 attestation으로 이어지도록 연결
 
 ### Acceptance Criteria
-- 데모에서 한 request에 대해 buyer/seller/gateway 3자 서명이 모두 기록되고 검증된다
+- [ ] 데모에서 한 request에 대해 buyer/seller/gateway 3자 서명이 모두 기록되고 검증된다
+
+### Commit Message
+`feat(receipt): integrate buyer/seller/gateway multi-attestation into demo flow`
 
 ---
 
 ## T-134 — Single-Secret Demo Mode (One Env Secret, Auto Signing)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-119, T-120, T-121, T-133
 
 ### Description
-데모 안정성과 “agent가 실제로 서명한다”를 동시에 만족시키기 위해,
+데모 안정성과 "agent가 실제로 서명한다"를 동시에 만족시키기 위해,
 비밀값을 **하나만**(환경변수 1개) 주고도 buyer/seller/gateway 역할별 서명과 요청을 자동화한다.
 
-권장 2가지 옵션 중 하나를 선택:
-1) `DEMO_PRIVATE_KEY` (하나의 EOA를 buyer/seller/gateway/resolver가 공유: 가장 단순하지만 역할 분리가 약해짐)
-2) `DEMO_MNEMONIC` (하나의 시드에서 역할별 EOA를 파생: 역할 분리가 명확하고 데모에 더 적합)
+권장: `DEMO_MNEMONIC` (하나의 시드에서 역할별 EOA를 파생: 역할 분리가 명확하고 데모에 더 적합)
 
 ### Tasks
 - 공통 env 추가:
@@ -1096,453 +154,761 @@ buyer-pays 모델(T-123)을 구현하려면 ABI/컨트랙트가 정확히 일치
   - `BUYER_PRIVATE_KEY`, `SELLER_PRIVATE_KEY`, `GATEWAY_PRIVATE_KEY`, `RESOLVER_PRIVATE_KEY`
   - `BUYER_ADDRESS`, `SELLER_ADDRESS`, `GATEWAY_ADDRESS`, `RESOLVER_ADDRESS`
   - 명시적으로 role env가 설정되면 그 값을 우선
-- 데모 스크립트/에이전트에서 “키가 없으면 실행 불가”가 아니라:
-  - `DEMO_*`가 있으면 자동으로 파생/주입해 동작하도록 처리
-- 보안/데모 경고 문구 추가:
-  - “해커톤 데모용, 절대 메인키로 쓰지 말 것”을 문서/로그에 명시
+- 데모 스크립트/에이전트에서 `DEMO_*`가 있으면 자동으로 파생/주입해 동작
+- 보안/데모 경고 문구: "해커톤 데모용, 절대 메인키로 쓰지 말 것"
 
 ### Acceptance Criteria
-- 데모 실행 시 “환경변수로 넣어야 하는 시크릿”이 1개로 줄어든다
-- Buyer/Seller/Gateway가 서명한 아티팩트(402 결제 헤더, receipt attestation 등)가 자동으로 생성/제출된다
+- [ ] 데모 실행 시 환경변수 시크릿이 1개로 줄어든다
+- [ ] Buyer/Seller/Gateway가 서명한 아티팩트가 자동으로 생성/제출된다
+
+### Commit Message
+`feat(demo): single-secret mode with auto role-key derivation`
 
 ---
 
 ## T-135 — One-Command Demo Orchestration (Deploy → Run → Prove)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **Depends on:** T-134, T-129, T-133
 
 ### Description
-심사/발표에서 흔들리지 않도록 “한 번에 재현되는” 데모 오케스트레이션을 제공한다.
+심사/발표에서 흔들리지 않도록 "한 번에 재현되는" 데모 오케스트레이션을 제공한다.
 
 ### Tasks
-- `scripts/demo_one_command.sh` 또는 `python scripts/demo_one_command.py` 추가:
-  - SKALE Base Sepolia (BITE v2 Sandbox 2) 배포(Foundry) 실행 및 주소 파싱
-  - Gateway/Seller/Buyer Agent 순서대로 실행(포트 충돌/헬스체크 포함)
+- `scripts/demo_one_command.sh` 또는 `python scripts/demo_one_command.py`:
+  - SKALE Sepolia 배포(Foundry) + 주소 파싱
+  - Gateway/Seller/Buyer Agent 순서대로 실행 (포트 충돌/헬스체크)
   - 3개 시나리오 실행 + receipt/tx_hash 출력
   - receipt 3자 서명(attestation)까지 자동 제출
-  - (옵션) dispute open/resolve/finalize까지 한 번 보여주는 플로우
-- 출력 포맷을 발표 친화적으로 고정:
-  - “협상 결과(quote/mandate)”, “402”, “receipt hash”, “tx hash”, “attestations complete”가 한 화면에 보이게
+  - (옵션) dispute open/resolve/finalize 플로우
+- 출력 포맷을 발표 친화적으로 고정
 
 ### Acceptance Criteria
-- 새 환경에서 1개 커맨드로 데모를 재현할 수 있다(실패 시 어떤 단계가 실패했는지 명확히 출력)
+- [ ] 새 환경에서 1개 커맨드로 데모 재현 가능 (실패 시 단계 명확히 출력)
+
+### Commit Message
+`feat(demo): one-command orchestration script`
 
 ---
 
 ## T-136 — Demo Console Web Page (Negotiation + Monitoring)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-119, T-120, T-129, T-133
 
 ### Description
-데모에서 “협상(negotiation)”과 “모니터링(monitoring)”을 한 화면에서 보여주는 단일 웹 페이지를 만든다.
-Next.js 없이도 열 수 있도록 `dashboard/`의 static HTML로 구현하는 것을 기본으로 한다.
+데모에서 "협상(negotiation)"과 "모니터링(monitoring)"을 한 화면에서 보여주는 단일 웹 페이지.
 
 ### Tasks
 - 페이지 구성(1장):
-  - Seller: capabilities 조회(`GET /seller/capabilities`) 결과 표시
-  - Negotiation: quote 요청(`POST /seller/quote`) 및 최종 mandate 표시
-  - Gateway: mandate 등록/조회/상태(see T-129) 표시
-  - Execution: 시나리오 실행 트리거(서버 사이드) 및 진행상태 표시(see T-137)
-  - Receipts: `/v1/receipts` 테이블, receipt detail, attestation 상태, tx_hash 링크
-  - Disputes: open/resolve/finalize 버튼과 상태(온체인/캐시) 표시
-- 네트워크 설정:
-  - UI 상단에 `Gateway URL`, `Seller URL` 입력
-  - CORS 문제가 있으면 gateway에 CORS 허용 설정 티켓 추가
-- 발표 친화 출력:
-  - “협상 결과(terms)”, “402”, “receipt_hash”, “tx_hash”, “3자 서명 complete”가 한 화면에 보이게
+  - Seller: capabilities 조회 결과
+  - Negotiation: quote 요청 및 최종 mandate
+  - Gateway: mandate 등록/조회/상태
+  - Execution: 시나리오 실행 트리거 + 진행상태
+  - Receipts: 테이블, detail, attestation 상태, tx_hash 링크
+  - Disputes: open/resolve/finalize 버튼과 상태
+- 네트워크 설정: UI 상단에 Gateway URL, Seller URL 입력
+- 발표 친화 출력
 
 ### Acceptance Criteria
-- 브라우저에서 페이지 하나로 협상 결과와 실시간 receipt/정산 상태를 확인할 수 있다
+- [ ] 브라우저에서 페이지 하나로 협상 결과와 실시간 receipt/정산 상태 확인 가능
+
+### Commit Message
+`feat(dashboard): demo console with negotiation + monitoring`
 
 ---
 
 ## T-137 — Demo Run API (Server-side Buyer Agent Orchestration)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-121, T-134
 
 ### Description
-브라우저에 private key를 노출하지 않으면서도 “버튼 한 번으로 실행”을 만들기 위해,
+브라우저에 private key를 노출하지 않으면서도 "버튼 한 번으로 실행"을 위해
 gateway에 데모 전용 orchestration API를 추가한다.
 
 ### Tasks
-- 데모 전용 엔드포인트 추가(예: `/v1/demo/run`):
+- `/v1/demo/run` 엔드포인트:
   - 입력: mode(s), seller url, mandate id(optional)
-  - 동작: buyer agent flow 실행(협상 포함 시 더 좋음), receipt 생성, attestation 제출
-  - 출력: 단계별 로그 + 결과( request_id, receipt_hash, tx_hash, attestation status )
-- 진행상태 전달:
-  - polling 응답 또는 SSE(`/v1/demo/stream`) 형태 중 하나 선택
-- 보안:
-  - `DEMO_MODE=true`일 때만 활성화
-  - 로컬/데모 환경에서만 사용하도록 문서에 명시
+  - 동작: buyer agent flow 실행, receipt 생성, attestation 제출
+  - 출력: 단계별 로그 + 결과
+- 진행상태: polling 또는 SSE(`/v1/demo/stream`)
+- 보안: `DEMO_MODE=true`일 때만 활성화
 
 ### Acceptance Criteria
-- Demo Console(T-136)에서 버튼 클릭으로 시나리오 실행이 가능하고, secrets는 서버(env)에서만 사용한다
+- [ ] Demo Console에서 버튼 클릭으로 시나리오 실행, secrets는 서버(env)에서만 사용
+
+### Commit Message
+`feat(gateway): add demo run API for browser-triggered scenarios`
 
 ---
 
 ## T-138 — Event Ledger (Negotiation + SLA Evidence Timeline)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-119, T-120, T-121, T-129
 
 ### Description
-데모에서 “협상 내용”과 “SLA 측정/정산 과정”을 한 눈에 보여주려면, receipt 테이블만으로는 부족하다.
-협상과 실행 중 발생한 사건들을 append-only 이벤트로 남겨 “타임라인”을 구성한다.
+협상과 실행 중 발생한 사건들을 append-only 이벤트로 남겨 "타임라인"을 구성한다.
 
-이벤트 예시:
-- negotiation: capabilities fetched, quote requested, quote received, mandate accepted/rejected/counter
-- payment: 402 issued, payment verified (mode=hmac/x402), buyer identity
-- execution: seller request started, seller response received, upstream error/timeout
-- validation: schema pass/fail + details
+이벤트 종류:
+- negotiation: capabilities, quote, mandate accept/reject
+- payment: 402, payment verified
+- execution: seller request/response, error/timeout
+- validation: schema pass/fail
 - pricing: tier applied, payout/refund
-- receipt: receipt_hash computed, gateway signature
-- chain: settlement tx submitted/failed, dispute tx submitted/failed, finalize tx submitted/failed
-- attestations: buyer/seller/gateway attested + verification result
+- receipt: receipt_hash, gateway signature
+- chain: settlement/dispute/finalize tx
+- attestations: buyer/seller/gateway attested
 
 ### Tasks
-- 이벤트 모델 정의:
-  - 최소 필드: `event_id`, `ts`, `kind`, `request_id?`, `mandate_id?`, `actor`(buyer/seller/gateway/resolver), `data`
-- 저장소:
-  - SQLite (기본) + in-memory fallback
-  - receipt DB와 같은 `RECEIPT_DB_PATH` 또는 별도 `EVENT_DB_PATH`로 구성
-- API:
-  - `GET /v1/events?request_id=...&mandate_id=...&limit=...`
-  - `GET /v1/events/export` (JSONL)
-- gateway/seller/buyer agent에서 주요 지점에 이벤트 기록 훅 추가
+- 이벤트 모델: `event_id`, `ts`, `kind`, `request_id?`, `mandate_id?`, `actor`, `data`
+- 저장소: SQLite (기본) + in-memory fallback
+- API: `GET /v1/events?request_id=...&mandate_id=...&limit=...`, `GET /v1/events/export` (JSONL)
+- gateway/seller/buyer agent에 이벤트 기록 훅 추가
 
 ### Acceptance Criteria
-- 한 번의 데모 실행에 대해 “협상→402→실행→검증→정산→서명” 타임라인이 이벤트로 복원 가능하다
+- [ ] 한 번의 데모 실행에 대해 협상→402→실행→검증→정산→서명 타임라인이 이벤트로 복원 가능
+
+### Commit Message
+`feat(gateway): add event ledger for negotiation and SLA timeline`
 
 ---
 
 ## T-139 — History Page (SLA + Negotiation + Incidents)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-136, T-138
 
 ### Description
-데모용 웹 페이지 1장(또는 탭 1개)에서 다음을 모두 조회할 수 있어야 한다:
-- 협상 내역(quote/mandate)
-- 측정된 SLA 항목(latency/validation/price)
-- 발생 사건(402, upstream_error, schema_fail, tx_fail, dispute 등)
+데모 웹 페이지에서 협상 내역, SLA 항목, 발생 사건을 한 눈에 조회.
 
 ### Tasks
-- `dashboard/` static UI에 “History/Timeline” 섹션 추가:
+- `dashboard/`에 "History/Timeline" 섹션:
   - request_id/mandate_id 검색
   - 이벤트 타임라인 렌더
   - receipt/attestation/tx 링크
-- 빠른 데모를 위한 프리셋 필터:
-  - “SLA violation only” (validation_fail, timeout, slow tier, tx_fail)
+- 프리셋 필터: "SLA violation only"
 
 ### Acceptance Criteria
-- 발표자가 특정 request_id를 입력하면, 협상부터 정산까지의 사건이 1페이지에서 재생성된다
+- [ ] 특정 request_id 입력 시, 협상부터 정산까지 1페이지에서 재생
+
+### Commit Message
+`feat(dashboard): add history page with SLA timeline`
 
 ---
 
 ## T-140 — SLA Violation Simulation Pack
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-119, T-120, T-129
 
 ### Description
-심사에서 “SLA가 깨졌을 때 어떻게 되는지”를 반드시 보여줘야 한다.
-현재는 slow/invalid 정도만 쉽게 재현 가능하므로, 위반 케이스들을 명시적으로 시뮬레이션 가능하게 만든다.
-
-현 구현 메모(갭):
-- `seller/main.py`는 `fast|slow|invalid`를 지원하지만, gateway가 현재 `/seller/call`로 `mode`를 전달하지 않는다 (T-130 필요)
-- `scripts/run_demo.py`는 `gateway.demo_seller` 기준 시나리오로 작성되어 있어 “전부 Gemini” 데모 요건을 충족하지 못한다 (T-145 필요)
+심사에서 "SLA가 깨졌을 때"를 반드시 보여줘야 한다. 위반 케이스를 명시적으로 시뮬레이션.
 
 ### Simulation Cases
 - latency breach (tier 하락): `mode=slow`
-- correctness breach (validator fail): `mode=invalid` (필수 필드 제거)
-- upstream failure: seller 다운 / 네트워크 에러 / 5xx
-- timeout breach: seller가 timeout을 초과하도록 강제
-- payment failure: unpaid/invalid payment/replay
-- chain failure: invalid signature / revert / rpc down (정산 실패)
+- correctness breach (validator fail): `mode=invalid`
+- upstream failure: seller 다운 / 5xx
+- timeout breach: seller timeout 초과
+- payment failure: unpaid/invalid/replay
+- chain failure: invalid sig / revert / rpc down
 
 ### Tasks
-- Seller에 시뮬레이션 옵션 정리:
-  - `mode=slow|invalid|error|timeout` 같은 명시적 모드 추가
-  - (가능하면) `delay_ms` 같은 정밀 제어
-- Gateway에 시뮬레이션 훅(데모 모드 한정):
-  - `DEMO_FORCE_TIMEOUT_MS`, `DEMO_FORCE_UPSTREAM_ERROR`, `DEMO_FORCE_VALIDATION_FAIL` 등
-- Demo scripts에 “위반 케이스 데모 시나리오”를 포함
+- Seller에 `mode=slow|invalid|error|timeout` + `delay_ms` 정밀 제어
+- Gateway에 시뮬레이션 훅(데모 모드 한정): `DEMO_FORCE_*` 환경변수
+- Demo scripts에 위반 케이스 시나리오 포함
 
 ### Acceptance Criteria
-- 데모에서 최소 3개의 “SLA 미충족” 케이스를 버튼/커맨드로 재현 가능하다
+- [ ] 최소 3개의 SLA 미충족 케이스를 버튼/커맨드로 재현 가능
+
+### Commit Message
+`feat(demo): add SLA violation simulation pack`
 
 ---
 
 ## T-141 — Demo Console Connectivity (CORS or Same-origin Hosting)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-136
 
 ### Description
-데모 콘솔(`dashboard/` static HTML)이 gateway/seller API를 직접 호출해야 한다.
-`file://` 또는 다른 origin에서 열면 브라우저 CORS에 걸릴 수 있으므로, 데모 환경에서 “항상 동작”하도록 연결 방식을 고정한다.
+데모 콘솔이 gateway/seller API를 호출할 때 CORS에 걸리지 않도록 연결 방식 고정.
 
 ### Tasks
-- 아래 중 하나를 선택해 구현/문서화:
-  - A안) gateway가 `dashboard/`를 static으로 서빙하여 same-origin으로 호출
-  - B안) gateway에 CORS 허용(데모 모드 한정, 허용 origin 제한)
-  - C안) demo 콘솔을 gateway dev server에서 함께 띄우기(예: `python -m http.server` + CORS)
-- `DEMO.md`/`LOCAL.md`에 “데모 콘솔 여는 방법”을 1줄로 고정
+- 아래 중 하나:
+  - A) gateway가 dashboard/를 static 서빙 (same-origin)
+  - B) gateway에 CORS 허용 (데모 모드 한정)
+  - C) demo 콘솔을 gateway dev server에서 함께 서빙
+- DEMO.md/LOCAL.md에 "데모 콘솔 여는 방법" 1줄 고정
 
 ### Acceptance Criteria
-- 크롬 시크릿/새 머신에서도 데모 콘솔이 API 호출에 실패하지 않는다(추가 플러그인/브라우저 설정 없이)
+- [ ] 크롬 시크릿/새 머신에서도 데모 콘솔이 API 호출 실패 없이 동작
+
+### Commit Message
+`fix(gateway): resolve CORS for demo console connectivity`
 
 ---
 
 ## T-142 — SLA Breach Reasons (Explainable SLA Evaluation)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **Depends on:** T-030, T-060, T-138, T-139
 
 ### Description
-데모에서 “왜 SLA가 깨졌는지”를 말로 설명하지 않고, 시스템이 스스로 증거를 남기게 한다.
-현재는 `validation_passed`, `latency_ms`, `rule_applied` 정도만 있어, 위반 사유/증거가 UI에서 한 눈에 안 들어온다.
+"왜 SLA가 깨졌는지"를 시스템이 증거로 남기도록. 위반 사유 코드를 receipt/event에 기록.
 
 ### Tasks
-- receipt와 event ledger에 “위반 사유 코드”를 기록:
-  - 예: `BREACH_LATENCY_TIER_DOWN`, `BREACH_SCHEMA_FAIL`, `BREACH_UPSTREAM_ERROR`, `BREACH_TIMEOUT`, `BREACH_PAYMENT_INVALID`, `BREACH_CHAIN_SETTLE_FAIL`
-- pricing/validation/outcome 단계에서 breach reasons를 결정적으로 산출(LLM 금지)
-- History Page(T-139)에서 breach reasons를 pill/태그로 표시하고, 관련 이벤트/필드로 드릴다운 제공
+- receipt와 event ledger에 위반 사유 코드 기록:
+  - `BREACH_LATENCY_TIER_DOWN`, `BREACH_SCHEMA_FAIL`, `BREACH_UPSTREAM_ERROR`, `BREACH_TIMEOUT`, `BREACH_PAYMENT_INVALID`, `BREACH_CHAIN_SETTLE_FAIL`
+- pricing/validation/outcome 단계에서 breach reasons를 결정적으로 산출 (LLM 금지)
+- History Page에서 breach reasons를 pill/태그로 표시 + 드릴다운
 
 ### Acceptance Criteria
-- 발표자가 특정 request를 클릭했을 때, “무슨 SLA가 어떻게 깨졌는지”가 UI에서 즉시 보인다
+- [ ] 특정 request 클릭 시, "무슨 SLA가 어떻게 깨졌는지" UI에서 즉시 확인
+
+### Commit Message
+`feat(gateway): add explainable SLA breach reason codes`
 
 ---
 
 ## T-143 — Mock SLA Offer Catalog (Multiple Quotes, Demo-friendly)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-120, T-129, T-136
 
 ### Description
-데모에서 “협상”이 보이려면 선택지가 있어야 한다.
-다만 실제 협상 로직은 단순화할 수 있다:
-- SLA 오퍼는 **우리쪽(Buyer/대시보드/Gateway)** 에서 “카탈로그(프리셋)”로 모킹
-- Seller는 buyer가 만든 mandate를 **그냥 수락(accept)** 하는 형태로 구성 가능
+데모에서 "협상"이 보이려면 선택지가 있어야 한다.
+SLA 오퍼를 카탈로그(프리셋)로 모킹, Seller는 buyer mandate를 수락하는 형태.
 
 ### Tasks
-- 오퍼 카탈로그 제공 위치를 아래 중 하나로 결정:
-  - A) Demo Console이 로컬 프리셋을 보유(가장 단순)
-  - B) Gateway가 `GET /v1/demo/offers`로 제공(이력/버전 관리 용이)
-  - C) Seller `POST /seller/quote`가 복수 오퍼 반환(가장 “시장”스럽지만 구현량 증가)
-- 최소 3개 프리셋 오퍼 제공(예):
+- 오퍼 카탈로그 위치 결정 (Demo Console 로컬 프리셋 / Gateway API / Seller quote)
+- 최소 3개 프리셋:
   - `Bronze`: 낮은 max_price, 느슨한 latency tier
   - `Silver`: 중간
-  - `Gold`: 높은 max_price, 타이트한 latency tier(빠르면 payout 높음)
-- 각 오퍼에 포함할 필드(결정적):
-  - `offer_id`, `service_id`, `max_price`, `base_pay`, `bonus_rules(latency_tiers)`, `validators`, `dispute_window_sec`
-- Gateway mandate 등록(T-129) 시:
-  - 어떤 `offer_id`에서 유래한 mandate인지 이벤트/receipt에 남기기(T-138, T-142 연계)
+  - `Gold`: 높은 max_price, 타이트한 latency tier
+- 각 오퍼 필드: `offer_id`, `service_id`, `max_price`, `base_pay`, `bonus_rules`, `validators`, `dispute_window_sec`
+- mandate에 `offer_id` 유래 기록
 
 ### Acceptance Criteria
-- 데모 콘솔에서 “Bronze/Silver/Gold 중 선택”이 가능하고, 선택한 SLA 조건이 receipt/이력에 명확히 남는다
+- [ ] 데모 콘솔에서 Bronze/Silver/Gold 중 선택, SLA 조건이 receipt/이력에 명확히 남음
+
+### Commit Message
+`feat(gateway): add mock SLA offer catalog with Bronze/Silver/Gold presets`
 
 ---
 
 ## T-144 — Dashboard SLA/Incident Simulator Controls (Latency Slider + Failure Toggles)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-136, T-138, T-140, T-141
 
 ### Description
-발표 중 실시간으로 SLA를 깨거나 만족시키는 모습을 보여주기 위해,
-대시보드에서 seller의 지연/오류를 조정하고 즉시 실행할 수 있는 “시뮬레이터 컨트롤”을 추가한다.
+발표 중 실시간으로 SLA를 깨거나 만족시키는 모습을 위해, 대시보드에 시뮬레이터 컨트롤 추가.
 
 ### Tasks
-- Seller 시뮬레이션 입력 확장(데모 모드 한정):
-  - `delay_ms` (예: 0~8000 슬라이더)
-  - `force_http_status` 또는 `force_error=upstream_error|timeout|schema_invalid`
-  - 현재 `mode=fast|slow|invalid`는 유지하되, `delay_ms`가 우선하도록 규칙 고정
-- Gateway가 시뮬레이션 파라미터를 seller로 전달하도록 wiring(T-130과 조합)
-- Demo Console(T-136)에 컨트롤 추가:
-  - SLA 오퍼 선택(T-143)
-  - 지연 슬라이더(현재 값 표시)
-  - 오류 토글(예: schema_invalid, upstream_5xx, timeout)
-  - “Run” 버튼 1개로 실행하고, 결과(402→paid→receipt→tx)를 한 화면에 표시
-- Event Ledger(T-138)에 “시뮬레이션 설정 값”을 이벤트로 기록:
-  - 나중에 이력에서 “왜 깨졌는지”를 재현 가능
+- Seller 시뮬레이션 입력: `delay_ms` 슬라이더 (0~8000), `force_error` 토글
+- Gateway가 시뮬레이션 파라미터를 seller로 전달
+- Demo Console에 컨트롤: SLA 오퍼 선택 + 지연 슬라이더 + 오류 토글 + Run 버튼
+- Event Ledger에 시뮬레이션 설정값 기록
 
 ### Acceptance Criteria
-- 발표자가 슬라이더/토글만 조절해서 “SLA 만족/위반”을 즉석에서 재현할 수 있다
-- 이력 페이지에서 당시의 시뮬레이션 설정과 결과가 함께 보인다
+- [ ] 슬라이더/토글로 SLA 만족/위반을 즉석 재현
+- [ ] 이력에서 당시 시뮬레이션 설정과 결과가 함께 보임
+
+### Commit Message
+`feat(dashboard): add SLA simulator controls with latency slider`
 
 ---
 
 ## T-145 — Demo Runner Migration to Gemini Seller (No demo_seller Dependency)
-**Status:** TODO
+**Status:** DONE
 **Priority:** P0
 **Depends on:** T-120, T-130
 
 ### Description
-현재 `scripts/run_demo.py`는 `gateway.demo_seller` 기준으로 작성되어 있다.
-심사 요건(실제 LLM 사용, 전부 Gemini)을 만족하려면, 데모 러너/시나리오가 `seller/`(Gemini) upstream으로도 동일하게 동작해야 한다.
+`scripts/run_demo.py`가 `seller/`(Gemini) upstream으로도 동일하게 동작하도록 마이그레이션.
 
 ### Tasks
-- `scripts/run_demo.py`(또는 별도 `scripts/run_demo_gemini.py`)가 아래를 만족하도록 수정:
-  - Seller upstream이 `seller/main.py`일 때도 `fast|slow|invalid`가 재현됨
-  - 시나리오별로 “Gemini 사용 여부/모델명/요약”을 로그에 남김(증거)
-  - fallback(`SELLER_FALLBACK=true`)로 내려갔는지도 명확히 표기
-- `DEMO.md`/`LOCAL.md`의 prereq를 `gateway.demo_seller`가 아니라 `seller/` 기준으로 업데이트
+- `scripts/run_demo.py` 수정:
+  - Seller upstream이 `seller/main.py`일 때도 `fast|slow|invalid` 재현
+  - Gemini 사용 여부/모델명 로그
+  - fallback 표기
+- DEMO.md/LOCAL.md prereq를 `seller/` 기준으로 업데이트
 
 ### Acceptance Criteria
-- 발표 환경에서 demo 러너가 Gemini seller로 3시나리오(정상/느림/무효)를 재현하고, gateway receipt/정산까지 일관되게 보여준다
+- [ ] Gemini seller로 3시나리오(정상/느림/무효) 재현, receipt/정산까지 일관
+
+### Commit Message
+`feat(demo): migrate demo runner to Gemini seller`
 
 ---
 
-## T-146 — x402 Agentic Tool Chain (2+ Paid Steps + CDP Wallet + Budgeting)
-**Status:** DONE
+# Milestone 6 — WDK Module Hardening
+
+WDK sidecar(Node.js) + Python 클라이언트 + 통합 레이어 전반의 보안·신뢰성·운영성 개선.
+기존 기능은 유지하면서 프로덕션-레디 수준으로 끌어올린다.
+
+**영향 범위:**
+- `wdk-service/src/server.mjs` — Node.js sidecar
+- `buyer_agent/wdk_wallet.py` — Python HTTP 클라이언트
+- `gateway/app/settlement_client.py` — gateway 정산 서명
+- `buyer_agent/client.py` — buyer deposit 경로
+- `buyer_agent/tools.py` — tool chain executor
+
+---
+
+## T-150 — WDK Seed Phrase Exposure 차단
+**Status:** TODO
 **Priority:** P0
-**Depends on:** T-040, T-121, T-122, T-137
+**Depends on:** none
 
 ### Description
-Meet the x402 track with an explicit multi-step paid tool chain.
-- At least 2 paid tool calls (each 402 → pay → retry)
-- CDP Wallet used for signing/custody proof
-- Deterministic budget reasoning and spend logs
+WDK 서비스와 Python 클라이언트에서 seed phrase가 로그·응답·repr에 노출되는 경로를 모두 차단한다.
 
 ### Tasks
-- Define a tool catalog with price/latency/quality metadata:
-  - `data/tool_catalog.json` or `gateway/app/tools.py`
-  - At least 2 paid tools (e.g., `data_lookup`, `report_summarize`)
-- Add a "discover → decide → pay → outcome" chain to the Buyer Agent:
-  - Step 1: paid data call
-  - Step 2: paid post-processing/report call
-  - Each step runs its own 402 challenge + paid retry
-- Integrate CDP Wallet:
-  - Route x402 signing/custody through CDP Wallet
-  - Logs show "CDP wallet used" clearly
-- Budget reasoning + limits:
-  - Deterministic rules such as `budget_usdc`, `max_step_price`, `min_value_per_price`
-  - Downgrade/abort with reason code when over budget
-- Spend tracking + report:
-  - Per-step `tool_id`, `price`, `receipt_id`, `payment_hash`
-  - Total spend and remaining budget in logs + JSON
-- Add a demo script:
-  - `scripts/run_x402_chain_demo.py` (or an option on existing demo)
-  - One run shows 2 paid steps + final outcome + spend summary
+- `wdk-service/src/server.mjs`: `/wallet/create` 응답에서 `seedPhrase` 필드 제거
+- `wdk-service/src/server.mjs`: `/health` 응답에서 `rpcUrl` 필드 제거 (내부 인프라 정보 유출 방지)
+- `buyer_agent/wdk_wallet.py`: `WDKWallet.__repr__` 오버라이드 — seed_phrase를 `***` 마스킹
+- `buyer_agent/wdk_wallet.py`: `__str__` 도 동일 처리
+- seed phrase가 포함된 객체가 logger·traceback에 찍히는 경로 점검
 
 ### Acceptance Criteria
-- One workflow shows 2+ x402 payments (each 402 → pay → retry) in logs
-- CDP Wallet usage is evidenced in config/logs/screenshots
-- Per-step spend + total spend + budget reasoning are logged and exportable
-- README/DEMO docs include run steps and sample output
+- [ ] `/wallet/create` 응답에 seedPhrase 없음
+- [ ] `/health` 응답에 rpcUrl 없음
+- [ ] `repr(wallet)`, `str(wallet)` 에 seed phrase 미노출
+- [ ] 기존 테스트 전부 통과
 
-### Completion Notes
-- data/tool_catalog.json: 2 paid tools (data_lookup $0.05, report_summarize $0.08) with price/latency/quality
-- buyer_agent/cdp_wallet.py: CDPWallet adapter (cdp_local mode, sign_payment, sign_receipt_hash, audit status)
-- buyer_agent/tools.py: ToolChainExecutor (discover→decide→pay→outcome), BudgetManager, per-step StepSpend tracking
-- scripts/run_x402_chain_demo.py: demo script with 5-step output (catalog, CDP wallet, budget, chain, spend report + JSON export)
-- 15 new tests: catalog, budget (afford/exceed/max_step/spend/summary), CDP wallet (init/status/sign), chain (single/2-step/budget-abort/export/max-step-abort)
-- 229 total tests passing
-- Validate: `pytest buyer_agent/tests/test_tools.py -v`
+### Commit Message
+`fix(wdk): remove seed phrase exposure from API responses and repr`
 
 ---
 
-## T-147 — AP2 Intent → Authorization → Settlement Pattern (Audit-ready)
-**Status:** DONE
+## T-151 — WDK Service API 인증 (Bearer Token)
+**Status:** TODO
 **Priority:** P0
-**Depends on:** T-127, T-129, T-050, T-138
+**Depends on:** T-150
 
 ### Description
-Make the AP2 flow a reusable pattern:
-intent creation → authorization → settlement → receipt.
-All steps use A2A/AP2 envelopes and leave audit-ready records.
+WDK sidecar에 Bearer token 기반 인증을 추가해 무인가 호출을 차단한다.
 
 ### Tasks
-- Define AP2 message types and schemas:
-  - `intent.create`, `intent.authorize`, `settlement.execute`, `receipt.issue`
-  - Required fields: `intent_id`, `authorization_id`, `settlement_id`, `receipt_id`
-- Enforce state transitions in `gateway/app/a2a/routes.py`:
-  - Block settlement without authorization
-  - Provide failure modes for expired/canceled authorization
-- Record "who authorized what" in receipt/event logs:
-  - `authorized_by`, `authorized_at`, `policy_id` or `mandate_id`
-- Add a failure demo path:
-  - authorization rejected/expired → settlement blocked → failure receipt
-- Add docs + sample messages:
-  - `docs/AP2_FLOW.md` or `docs/SUBMISSION.md` with JSON examples
+- `server.mjs`: 환경변수 `WDK_AUTH_TOKEN`이 설정되면 모든 요청에 `Authorization: Bearer <token>` 헤더 검증 미들웨어 추가
+- `WDK_AUTH_TOKEN` 미설정 시 인증 미적용 (하위 호환)
+- `wdk_wallet.py`: `_request()` 에서 `WDK_AUTH_TOKEN` 환경변수 읽어 Authorization 헤더 첨부
+- `/health`는 인증 없이 접근 가능 (liveness probe)
 
 ### Acceptance Criteria
-- Full intent → authorization → settlement → receipt succeeds via AP2 envelopes
-- One authorization failure path is demoed and logged
-- Receipt/ledger shows authorizer, timestamp, and policy clearly
+- [ ] `WDK_AUTH_TOKEN` 설정 시, 토큰 없는 요청은 401 반환
+- [ ] 올바른 토큰 포함 시 정상 동작
+- [ ] `/health`는 토큰 없이도 200 응답
+- [ ] `WDK_AUTH_TOKEN` 미설정 시 기존 동작과 동일
+- [ ] 기존 테스트 전부 통과
 
-### Completion Notes
-- gateway/app/a2a/authorization.py: Intent + Authorization store with state machine (CREATED→AUTHORIZED→SETTLED→RECEIPT_ISSUED, REJECTED, EXPIRED)
-- gateway/app/a2a/envelope.py: +4 AP2 message constructors (intent_create, intent_authorize, settlement_execute, receipt_issue)
-- gateway/app/a2a/routes.py: +5 AP2 handlers with settlement gate (403 if no valid auth), intent reject, REST query endpoints
-- docs/AP2_FLOW.md: full documentation with flow diagram, state machine, JSON examples, failure path
-- 18 new tests (4 envelope, 7 auth store unit, 7 integration incl. full flow, blocked, expired, reject)
-- Event ledger records: authorization.intent_created, .granted, .rejected, .settlement_blocked, .settlement_executed, .receipt_issued
-- 247 total tests passing
-- Validate: `pytest gateway/tests/test_a2a.py -v`
+### Commit Message
+`feat(wdk): add Bearer token authentication to WDK sidecar`
 
 ---
 
-## T-148 — BITE v2 Encrypted Conditional Settlement (Privacy + Trigger)
-**Status:** DONE
+## T-152 — WDK Service Nonce Manager (동시 tx 충돌 방지)
+**Status:** TODO
 **Priority:** P0
-**Depends on:** T-010, T-050, T-138
+**Depends on:** none
 
 ### Description
-Use BITE v2 so encrypted conditions/pricing/policy are revealed and settled
-only when conditions are met. The demo must show why privacy matters.
+WDK 서비스에서 동시 트랜잭션 전송 시 nonce 충돌을 방지하는 per-wallet mutex + pending nonce tracker를 구현한다.
 
 ### Tasks
-- Define encrypted fields:
-  - e.g., `max_price`, `latency_tiers`, `tool_choice`, `buyer_policy`
-- Decide the BITE v2 SDK integration point:
-  - `facilitator/` or `gateway/app/settlement_client.py`
-- Implement condition evaluation + decrypt trigger:
-  - Condition: SLA validation pass + budget/policy satisfied
-  - On failure, do not decrypt or settle, log a reason code
-- Record encrypted lifecycle in logs/receipts:
-  - `encrypted_payload_hash`, `condition_result`, `decrypt_time`, `triggered_by`
-- Add two demo scenarios:
-  - Condition met → decrypt → settle → receipt
-  - Condition failed → no decrypt → no settlement (audit trail kept)
-- Document:
-  - what is private, when it unlocks, who can trigger
+- `server.mjs`: wallet별 nonce 관리 객체 추가
+  - `pendingNonce` Map: address → 마지막 사용 nonce
+  - nonce 할당 시 `Math.max(chain_pending_nonce, local_pending + 1)`
+- wallet별 mutex (간단한 promise 기반 lock)로 approve → deposit 같은 연속 호출이 순서 보장되도록
+- tx 실패 시 nonce 카운터 롤백
+- `/wallet/approve`, `/wallet/deposit`, `/wallet/transfer` 엔드포인트에 적용
 
 ### Acceptance Criteria
-- Logs show encrypt → condition check → decrypt/settle → receipt
-- Failure path shows no decrypt and no settlement
-- Submission includes BITE v2 evidence (logs/screenshots/code locations)
+- [ ] 동일 wallet에서 approve + deposit 연속 호출 시 nonce 충돌 없음
+- [ ] 동시 2개 deposit 요청 시 각각 다른 nonce 사용
+- [ ] tx 실패 시 다음 요청에서 nonce 복구
+- [ ] 기존 테스트 전부 통과
 
-### Completion Notes
-- gateway/app/bite_v2.py: BiteV2Engine with encrypt→condition_check→decrypt/settle lifecycle
-  - AES-GCM encryption (Fernet) with base64 fallback
-  - SLA + budget condition evaluators (deterministic)
-  - State machine: ENCRYPTED→DECRYPTED→SETTLED or ENCRYPTED→CONDITION_FAILED
-- gateway/app/bite_v2_routes.py: REST API (POST /v1/bite/encrypt, /evaluate/{id}, /settle/{id}, GET /payloads)
-- gateway/app/main.py: BITE v2 router registered
-- Event ledger: bite_v2.encrypted, .decrypted, .condition_failed, .settled
-- 19 new tests: 7 condition evaluator, 6 engine unit, 6 API integration (success + failure paths)
-- 266 total tests passing
-- Validate: `pytest gateway/tests/test_bite_v2.py -v`
+### Commit Message
+`feat(wdk): add per-wallet nonce manager to prevent tx collisions`
 
 ---
 
-## Stretch Tickets (Optional)
+## T-153 — WDKWallet Async Client + Connection Pooling
+**Status:** TODO
+**Priority:** P0
+**Depends on:** none
+
+### Description
+Python WDK 클라이언트를 async로 전환하고 커넥션 풀링을 적용해 이벤트루프 블로킹과 TCP 오버헤드를 제거한다.
+
+### Tasks
+- `wdk_wallet.py`: `_request()` 를 `async def _request()` 로 변환
+  - `httpx.AsyncClient` 인스턴스를 재사용 (lazy init, close 메서드 제공)
+- 모든 퍼블릭 메서드 async 전환
+- 동기 호출이 필요한 곳을 위한 `_request_sync()` 폴백 유지
+- 호출자 수정: `client.py`, `settlement_client.py`, `tools.py`의 WDK 호출을 await으로 변환
+- 커넥션 풀 사이즈: `WDK_POOL_SIZE` 환경변수 (기본 10)
+
+### Acceptance Criteria
+- [ ] WDK 호출이 이벤트루프를 블로킹하지 않음
+- [ ] httpx.AsyncClient가 요청 간 재사용됨
+- [ ] 기존 기능 동일 동작
+- [ ] 기존 테스트 async로 업데이트 후 전부 통과
+
+### Commit Message
+`refactor(wdk): convert WDKWallet to async with connection pooling`
+
+---
+
+## T-154 — WDK Retry + Circuit Breaker
+**Status:** TODO
+**Priority:** P1
+**Depends on:** T-153
+
+### Description
+WDK 클라이언트에 재시도 로직과 circuit breaker 패턴을 적용해 일시적 장애에 대한 복원력을 높인다.
+
+### Tasks
+- `wdk_wallet.py`: `_request()` 에 retry 로직 추가
+  - 재시도 대상: `httpx.ConnectError`, `httpx.TimeoutException`, HTTP 502/503/504
+  - 최대 2회 재시도, 지수 백오프 (0.5s, 1s)
+  - 비재시도 대상: 400, 401, 404 등 클라이언트 에러
+- circuit breaker 상태 머신:
+  - CLOSED → 연속 3회 실패 시 OPEN
+  - OPEN → 즉시 `WDKServiceError` 반환, 30초 후 HALF_OPEN
+  - HALF_OPEN → 1회 시도, 성공 시 CLOSED, 실패 시 OPEN
+- `from_env()` 에서 WDK가 None일 때 warning 로그 추가
+
+### Acceptance Criteria
+- [ ] 일시적 타임아웃 시 재시도 후 성공
+- [ ] 연속 3회 실패 시 circuit open, WDK 호출 스킵하고 바로 fallback
+- [ ] circuit 복구 후 정상 동작
+- [ ] `from_env()` None 리턴 시 로그에 이유 출력
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`feat(wdk): add retry with exponential backoff and circuit breaker`
+
+---
+
+## T-155 — Deposit ABI 단일화 (shared)
+**Status:** TODO
+**Priority:** P1
+**Depends on:** none
+
+### Description
+deposit() ABI가 `server.mjs`, `settlement_client.py`, `client.py` 3곳에 중복 정의. 단일 소스로 통합한다.
+
+### Tasks
+- `shared/abi/settlement.json` 파일 생성: 전체 Settlement ABI
+- `gateway/app/settlement_client.py`: `SETTLEMENT_ABI` 상수 제거, shared에서 로드
+- `buyer_agent/client.py`: 로컬 `abi` 변수 제거, shared에서 로드
+- `wdk-service/src/server.mjs`: `depositInterface`를 shared ABI에서 로드
+- 유틸: `shared/load_abi.py` (Python용)
+
+### Acceptance Criteria
+- [ ] deposit ABI 정의가 코드상 1곳에만 존재
+- [ ] 3개 컴포넌트 모두 동일 소스에서 ABI 로드
+- [ ] 기존 테스트 전부 통과
+
+### Commit Message
+`refactor(wdk): unify settlement ABI into shared/abi/settlement.json`
+
+---
+
+## T-156 — Approve → Deposit 원자성 + 재시도 전략
+**Status:** TODO
+**Priority:** P1
+**Depends on:** T-152
+
+### Description
+approve 성공 후 deposit 실패 시 allowance만 남고 deposit이 안 되는 문제를 해결.
+
+### Tasks
+- `server.mjs`: `/wallet/approve-and-deposit` 복합 엔드포인트 추가
+  - approve → tx receipt 대기 → deposit 순차 실행
+  - deposit 실패 시 최대 2회 재시도
+  - 전체 실패 시 에러 응답에 `approve_tx_hash` 포함
+- `wdk_wallet.py`: `approve_and_deposit()` 메서드 추가
+- `client.py`, `tools.py`의 approve → deposit 시퀀스를 새 메서드로 교체
+- 기존 개별 엔드포인트는 유지 (하위 호환)
+
+### Acceptance Criteria
+- [ ] approve 성공 + deposit 실패 시 deposit 재시도
+- [ ] 최종 실패 시 approve_tx_hash가 에러에 포함
+- [ ] 정상 경로에서 기존과 동일 동작
+- [ ] 기존 테스트 통과 + 새 테스트 추가
+
+### Commit Message
+`feat(wdk): add atomic approve-and-deposit endpoint with retry`
+
+---
+
+## T-157 — WDK sign-message vs sign-bytes 서명 경로 통일
+**Status:** TODO
+**Priority:** P1
+**Depends on:** none
+
+### Description
+`sign-message`는 WDK `account.sign()`을, `sign-bytes`는 ethers.Wallet을 직접 생성해 `signMessage()`를 호출.
+서명 경로가 다르면 포맷 불일치 가능.
+
+### Tasks
+- `server.mjs`: `sign-bytes`가 WDK native signing을 우선 사용하도록 변경
+  - 미지원 시 ethers fallback 유지하되, 응답에 `signing_method: "ethers_fallback"` 필드 추가
+- 두 엔드포인트의 서명 포맷 일관성 검증 테스트 추가
+
+### Acceptance Criteria
+- [ ] 동일 메시지에 대해 두 엔드포인트가 같은 결과 (또는 차이 문서화)
+- [ ] private key 직접 접근이 WDK native로 대체됨 (가능한 경우)
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`fix(wdk): unify signing paths between sign-message and sign-bytes`
+
+---
+
+## T-158 — WDK Service Observability (Logging + Metrics)
+**Status:** TODO
+**Priority:** P1
+**Depends on:** none
+
+### Description
+WDK 서비스에 구조화된 요청 로깅과 기본 메트릭 추가. 현재는 서버 시작 console.log 하나뿐.
+
+### Tasks
+- `server.mjs`: 요청 로깅 미들웨어
+  - method, path, status, duration_ms, wallet_address
+  - seed phrase / private key 절대 로그 미포함
+- `server.mjs`: `/metrics` 엔드포인트
+  - `wdk_requests_total{method, path, status}` 카운터
+  - `wdk_request_duration_ms{method, path}` 히스토그램
+  - `wdk_wallets_loaded` 게이지
+- `wdk_wallet.py`: 각 WDK 호출의 duration_ms를 logger에 출력
+
+### Acceptance Criteria
+- [ ] 모든 WDK API 호출이 구조화된 로그에 기록됨
+- [ ] `/metrics` 엔드포인트가 기본 카운터/게이지 반환
+- [ ] 로그에 seed phrase/private key 미포함
+- [ ] Python 클라이언트에서 WDK 호출 타이밍 로그 출력
+
+### Commit Message
+`feat(wdk): add structured request logging and /metrics endpoint`
+
+---
+
+## T-159 — WDK Service Graceful Shutdown + withTimeout 타이머 누수 수정
+**Status:** TODO
+**Priority:** P1
+**Depends on:** none
+
+### Description
+프로세스 종료 시 진행 중 요청 정리 + withTimeout 타이머 누수 수정.
+
+### Tasks
+- `server.mjs`: SIGTERM/SIGINT 핸들러
+  - 새 요청 거부 (503)
+  - 진행 중 요청 완료 대기 (최대 10초)
+  - 서버 종료
+- `server.mjs`: `withTimeout()` 수정 — 성공 시 `clearTimeout` 호출
+
+### Acceptance Criteria
+- [ ] SIGTERM 수신 시 진행 중 요청 완료 후 종료
+- [ ] withTimeout 성공 시 타이머 클린업 확인
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`fix(wdk): add graceful shutdown and fix withTimeout timer leak`
+
+---
+
+## T-160 — WDK Transaction Receipt 대기 옵션
+**Status:** TODO
+**Priority:** P1
+**Depends on:** T-152
+
+### Description
+approve/deposit/transfer가 tx hash만 반환하고 confirmation을 안 기다림. receipt 대기 옵션 추가.
+
+### Tasks
+- `server.mjs`: 요청 body에 `waitForReceipt` 옵션 (기본 false)
+  - `true` 시 `provider.waitForTransaction()` 후 receipt 정보 반환
+  - receipt 필드: `status`, `blockNumber`, `gasUsed`
+- `wdk_wallet.py`: `wait_for_receipt: bool = False` 파라미터 추가
+
+### Acceptance Criteria
+- [ ] `waitForReceipt=true` 시 tx 확정 후 receipt 포함 응답
+- [ ] `waitForReceipt=false` 시 기존 동작과 동일
+- [ ] receipt status 0 (실패) 시 에러 응답
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`feat(wdk): add waitForReceipt option for tx confirmation`
+
+---
+
+## T-161 — WDK RPC Provider Resilience (Retry + Fallback)
+**Status:** TODO
+**Priority:** P2
+**Depends on:** none
+
+### Description
+단일 RPC provider 장애 시 전체 서비스 다운. fallback URL 추가.
+
+### Tasks
+- `server.mjs`: `WDK_EVM_RPC_URL_FALLBACK` 환경변수
+- RPC 호출 실패 시 fallback URL로 재시도 (최대 1회)
+- health check에서 primary/fallback 상태 모두 표시
+
+### Acceptance Criteria
+- [ ] primary RPC 장애 시 fallback으로 자동 전환
+- [ ] health에서 primary/fallback 각각 상태 확인 가능
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`feat(wdk): add RPC provider fallback for resilience`
+
+---
+
+## T-162 — WDK Settlement Client Fallback 리팩토링
+**Status:** TODO
+**Priority:** P2
+**Depends on:** T-153
+
+### Description
+`settlement_client.py`의 WDK → local key fallback이 3중 try/except로 가독성 최악. 리팩토링.
+
+### Tasks
+- `settle_request()` 서명 로직을 `_sign_settlement()` 헬퍼로 추출
+  - 시도 순서: WDK → local key → raise
+  - 중첩 try/except 제거
+- `_get_gateway_wdk_wallet()` 에 threading.Lock 추가 (싱글톤 thread safety)
+- `ensure_wallet_loaded()` 가 `sign_bytes()` 후에 불필요하게 호출되는 부분 제거
+
+### Acceptance Criteria
+- [ ] settle_request() 서명 로직이 단일 헬퍼에 집중
+- [ ] 중첩 try/except 3단 → 1단으로 축소
+- [ ] 싱글톤 초기화 thread-safe
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`refactor(wdk): simplify settlement signing fallback logic`
+
+---
+
+## T-163 — WDK Health Check Integration (Startup Probe)
+**Status:** TODO
+**Priority:** P2
+**Depends on:** none
+
+### Description
+어떤 컴포넌트도 시작 시 WDK 서비스 health를 확인하지 않음. 첫 요청에서야 발견.
+
+### Tasks
+- `wdk_wallet.py`: `health()` 메서드 추가 — `GET /health` 호출
+- `buyer_agent/client.py`: `BuyerAgent.__init__`에서 WDK health check (실패 시 warning, fallback 전환)
+- `gateway/app/settlement_client.py`: gateway 시작 시 WDK health check
+- FastAPI startup 이벤트에 WDK readiness 로그
+
+### Acceptance Criteria
+- [ ] WDK 서비스 미기동 시 시작 로그에 warning 출력
+- [ ] health check 실패해도 애플리케이션 시작됨 (graceful degradation)
+- [ ] WDK 기동 중이면 connected + 체인/블록 정보 로그
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`feat(wdk): add startup health check for WDK sidecar`
+
+---
+
+## T-164 — WDK Service 테스트 스위트 (Node.js)
+**Status:** TODO
+**Priority:** P2
+**Depends on:** T-152, T-159
+
+### Description
+WDK Node.js 서비스 자체에 대한 테스트가 전무. 유닛 + 통합 테스트 추가.
+
+### Tasks
+- `wdk-service/tests/` 디렉토리 생성, vitest 또는 jest
+- 유닛 테스트:
+  - `normalizeValue()` 다양한 입력
+  - `badRequest()` 에러 포맷
+  - `getWalletRecord()` 미등록 wallet
+  - `withTimeout()` 정상/타임아웃
+- API 통합 테스트 (supertest):
+  - POST /wallet/create, /wallet/import, /wallet/sign-message, /wallet/sign-bytes
+  - GET /wallet/:address/balance
+  - 인증 실패 케이스
+- package.json에 `test` 스크립트
+
+### Acceptance Criteria
+- [ ] 최소 10개 테스트 케이스
+- [ ] `npm test`로 실행 가능
+- [ ] CI에 WDK 서비스 테스트 추가
+
+### Commit Message
+`test(wdk): add Node.js test suite for WDK sidecar service`
+
+---
+
+## T-165 — WDK Fallback 경로 통합 테스트
+**Status:** TODO
+**Priority:** P2
+**Depends on:** T-153, T-154
+
+### Description
+WDK 실패 → local key signing fallback 경로 테스트가 없음.
+
+### Tasks
+- `gateway/tests/test_settlement_client_fallback.py`:
+  - WDK sign_bytes 실패 → local key signing 정상
+  - WDK 완전 불가 → local key 정상
+  - 둘 다 실패 → 적절한 에러
+- `buyer_agent/tests/test_client_fallback.py`:
+  - WDK deposit 실패 → local key deposit 성공
+  - WDK 타임아웃 → fallback
+- 동시성 테스트: 3개 요청 동시 settle
+
+### Acceptance Criteria
+- [ ] WDK → local key fallback 경로 테스트 커버리지 100%
+- [ ] 동시 서명 요청 시 race condition 없음
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`test(wdk): add integration tests for WDK-to-local-key fallback paths`
+
+---
+
+## T-166 — WDK In-Memory Wallet 복구 (Service Restart Resilience)
+**Status:** TODO
+**Priority:** P2
+**Depends on:** T-153
+
+### Description
+WDK 서비스 재시작 시 `wallets` Map 초기화 → Python 클라이언트 cached `_address`와 불일치.
+
+### Tasks
+- `wdk_wallet.py`: WDK 호출 시 "wallet not loaded" 에러 감지 → 자동 re-import 후 재시도 (최대 1회)
+- `_address` 캐시 무효화: WDK 서비스 에러 시 `_address = None` 리셋
+
+### Acceptance Criteria
+- [ ] WDK 서비스 재시작 후 Python 클라이언트가 자동 복구
+- [ ] 재시도는 최대 1회 (무한 루프 방지)
+- [ ] 기존 테스트 통과
+
+### Commit Message
+`fix(wdk): auto-recover wallet on WDK service restart`
+
+---
+
+# Stretch Tickets (Optional)
+
 ### T-200 — Add SQL Test Harness Validator
-**Status:** TODO  
-**Priority:** P2  
+**Status:** TODO
+**Priority:** P2
 **Depends on:** T-031, T-032
-
-### T-210 — Receipt Indexing (SQLite) + Search
-**Status:** DONE
-**Priority:** P2  
-**Depends on:** T-050
-
-### T-220 — Multi-attestation (Buyer + Seller + Gateway)
-**Status:** DONE
-**Priority:** P2  
-**Depends on:** T-020, T-010
