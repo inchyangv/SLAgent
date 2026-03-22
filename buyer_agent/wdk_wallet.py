@@ -80,10 +80,15 @@ class WDKWallet:
         *,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        headers: dict[str, str] = {}
+        auth_token = os.getenv("WDK_AUTH_TOKEN", "").strip()
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
         response = httpx.request(
             method,
             f"{self.service_url}{path}",
             json=json_body,
+            headers=headers,
             timeout=self.timeout,
         )
         data: dict[str, Any] = response.json()

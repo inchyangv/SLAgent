@@ -11,8 +11,22 @@ const DEFAULT_SETTLEMENT_ADDRESS =
   process.env.WDK_SETTLEMENT_ADDRESS || process.env.SETTLEMENT_CONTRACT_ADDRESS || "";
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
+const AUTH_TOKEN = process.env.WDK_AUTH_TOKEN || "";
+
 const app = express();
 app.use(express.json());
+
+// Bearer token auth middleware — only active when WDK_AUTH_TOKEN is set
+app.use((req, res, next) => {
+  if (!AUTH_TOKEN) return next(); // disabled if token not configured
+  if (req.path === "/health") return next(); // liveness probe exempt
+  const authHeader = req.headers["authorization"] || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (token !== AUTH_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
 
 const wallets = new Map();
 const depositInterface = new ethers.Interface([
