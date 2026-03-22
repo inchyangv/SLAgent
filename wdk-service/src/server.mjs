@@ -14,11 +14,27 @@ const SETTLEMENT_ABI = JSON.parse(
 const PORT = Number(process.env.WDK_PORT || 3100);
 const CHAIN_NAME = process.env.WDK_CHAIN_NAME || "ethereum";
 const RPC_URL = process.env.WDK_EVM_RPC_URL || process.env.CHAIN_RPC_URL || "https://rpc.sepolia.org";
+const RPC_URL_FALLBACK = process.env.WDK_EVM_RPC_URL_FALLBACK || "";
 const DEFAULT_TOKEN_ADDRESS = process.env.WDK_USDT_ADDRESS || process.env.PAYMENT_TOKEN_ADDRESS || "";
 const DEFAULT_SETTLEMENT_ADDRESS =
   process.env.WDK_SETTLEMENT_ADDRESS || process.env.SETTLEMENT_CONTRACT_ADDRESS || "";
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
+const providerFallback = RPC_URL_FALLBACK ? new ethers.JsonRpcProvider(RPC_URL_FALLBACK) : null;
+
+async function callWithFallback(fn) {
+  try {
+    return await fn(provider);
+  } catch (primaryErr) {
+    if (!providerFallback) throw primaryErr;
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: "rpc_fallback",
+      error: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
+    }));
+    return fn(providerFallback);
+  }
+}
 const AUTH_TOKEN = process.env.WDK_AUTH_TOKEN || "";
 let isShuttingDown = false;
 const activeRequests = new Set();
@@ -227,32 +243,33 @@ async function withTimeout(promise, ms) {
 }
 
 app.get("/health", async (_req, res) => {
-  try {
-    const [network, block] = await withTimeout(
-      Promise.all([provider.getNetwork(), provider.getBlockNumber()]),
-      3000,
-    );
-    res.json({
-      ok: true,
-      chain: {
-        name: network.name,
-        chainId: network.chainId.toString(),
-      },
-      block,
-      loadedWallets: wallets.size,
-    });
-  } catch (error) {
-    res.json({
-      ok: false,
-      chain: {
-        name: CHAIN_NAME,
-        chainId: null,
-      },
-      block: null,
-      loadedWallets: wallets.size,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+  const checkRpc = async (p, label) => {
+    try {
+      const [network, block] = await withTimeout(
+        Promise.all([p.getNetwork(), p.getBlockNumber()]),
+        3000,
+      );
+      return { ok: true, name: network.name, chainId: network.chainId.toString(), block };
+    } catch (err) {
+      return { ok: false, name: label, chainId: null, block: null, error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
+  const primary = await checkRpc(provider, CHAIN_NAME);
+  const fallback = providerFallback ? await checkRpc(providerFallback, "fallback") : null;
+  const overallOk = primary.ok || (fallback?.ok ?? false);
+
+  res.json({
+    ok: overallOk,
+    chain: { name: primary.name, chainId: primary.chainId },
+    block: primary.block ?? fallback?.block,
+    loadedWallets: wallets.size,
+    rpc: {
+      primary: { ok: primary.ok, ...(primary.error ? { error: primary.error } : {}) },
+      ...(fallback ? { fallback: { ok: fallback.ok, ...(fallback.error ? { error: fallback.error } : {}) } } : {}),
+    },
+    ...(overallOk ? {} : { error: primary.error }),
+  });
 });
 
 app.post("/wallet/create", async (req, res, next) => {
