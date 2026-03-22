@@ -35,6 +35,12 @@ class FakeWDKWallet:
         self.calls.append(("deposit", kwargs))
         return f"0xdeposit_{len([c for c in self.calls if c[0] == 'deposit'])}"
 
+    async def approve_and_deposit(self, **kwargs) -> dict:
+        self.calls.append(("approve", kwargs))
+        self.calls.append(("deposit", kwargs))
+        n = len([c for c in self.calls if c[0] == "deposit"])
+        return {"approve_tx_hash": "0xapprove", "deposit_tx_hash": f"0xdeposit_{n}"}
+
 
 def test_load_tool_catalog():
     tools = load_tool_catalog()

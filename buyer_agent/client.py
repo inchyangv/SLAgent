@@ -271,18 +271,15 @@ class BuyerAgent:
 
         if self._wdk_wallet and settlement_addr and token_addr:
             try:
-                await self._wdk_wallet.ensure_wallet_loaded()
-                await self._wdk_wallet.approve(
+                result = await self._wdk_wallet.approve_and_deposit(
                     spender=settlement_addr,
-                    amount=amount,
-                    token_address=token_addr,
-                )
-                return await self._wdk_wallet.deposit(
                     request_id=request_id,
                     amount=amount,
+                    token_address=token_addr,
                     settlement_contract=settlement_addr,
                     buyer_address=self.buyer_address,
                 )
+                return str(result.get("deposit_tx_hash", ""))
             except Exception as exc:
                 logger.warning(
                     "WDK deposit path failed, falling back to local key signing: %s",

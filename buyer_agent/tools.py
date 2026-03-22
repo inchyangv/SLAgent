@@ -197,17 +197,15 @@ class ToolChainExecutor:
             return None
 
         buyer_address = await self.wallet.ensure_wallet_loaded()
-        await self.wallet.approve(
+        result = await self.wallet.approve_and_deposit(
             spender=settlement_addr,
-            amount=amount,
-            token_address=token_addr,
-        )
-        return await self.wallet.deposit(
             request_id=request_id,
             amount=amount,
+            token_address=token_addr,
             settlement_contract=settlement_addr,
             buyer_address=buyer_address,
         )
+        return str(result.get("deposit_tx_hash", ""))
 
     async def _build_mandate_for_tool(self, tool: ToolDef) -> dict[str, Any]:
         from gateway.app.offers import get_offer

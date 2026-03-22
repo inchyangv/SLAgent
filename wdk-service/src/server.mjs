@@ -313,6 +313,78 @@ app.post("/wallet/deposit", async (req, res, next) => {
   }
 });
 
+// --- Atomic approve-and-deposit endpoint ---
+app.post("/wallet/approve-and-deposit", async (req, res, next) => {
+  try {
+    const { address, spender, requestId, buyer, amount, tokenAddress, settlementContract } = req.body || {};
+    if (!address || !spender || !requestId || amount == null) {
+      throw badRequest("address, spender, requestId, and amount are required");
+    }
+    const record = getWalletRecord(address);
+    const resolvedToken = getTokenAddress(tokenAddress);
+    const resolvedSettlement = getSettlementAddress(settlementContract);
+    const buyerAddress = String(buyer || address);
+
+    let approveTxHash;
+    let depositTxHash;
+
+    // Step 1: approve (serialized via wallet lock)
+    approveTxHash = await withWalletLock(address, async () => {
+      const result = await record.account.approve({
+        spender: String(spender),
+        amount: normalizeValue(amount),
+        tokenAddress: resolvedToken,
+      });
+      const nonce = await getNextNonce(address);
+      pendingNonce.set(String(address).toLowerCase(), nonce);
+      return result;
+    });
+
+    // Step 2: deposit — retry up to 2 times on failure
+    let depositAttempts = 0;
+    let depositErr;
+    while (depositAttempts <= 2) {
+      try {
+        depositTxHash = await withWalletLock(address, async () => {
+          const nonce = await getNextNonce(address);
+          try {
+            const result = await record.account.sendTransaction({
+              to: resolvedSettlement,
+              value: 0n,
+              data: depositInterface.encodeFunctionData("deposit", [
+                ethers.keccak256(ethers.toUtf8Bytes(String(requestId))),
+                buyerAddress,
+                BigInt(amount),
+              ]),
+              nonce,
+            });
+            return result;
+          } catch (err) {
+            rollbackNonce(address);
+            throw err;
+          }
+        });
+        depositErr = null;
+        break;
+      } catch (err) {
+        depositErr = err;
+        depositAttempts++;
+      }
+    }
+
+    if (depositErr) {
+      return res.status(500).json({
+        error: depositErr instanceof Error ? depositErr.message : String(depositErr),
+        approve_tx_hash: approveTxHash,
+      });
+    }
+
+    res.json({ approve_tx_hash: approveTxHash, deposit_tx_hash: depositTxHash });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/wallet/sign-message", async (req, res, next) => {
   try {
     const { address, message } = req.body || {};

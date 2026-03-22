@@ -235,13 +235,9 @@ async def test_submit_buyer_deposit_prefers_wdk(monkeypatch):
             calls.append(("load", (), {}))
             return "0x1111111111111111111111111111111111111111"
 
-        async def approve(self, **kwargs):
-            calls.append(("approve", (), kwargs))
-            return "0xapprove"
-
-        async def deposit(self, **kwargs):
-            calls.append(("deposit", (), kwargs))
-            return "0xdeposit"
+        async def approve_and_deposit(self, **kwargs):
+            calls.append(("approve_and_deposit", (), kwargs))
+            return {"approve_tx_hash": "0xapprove", "deposit_tx_hash": "0xdeposit"}
 
     monkeypatch.setattr("buyer_agent.client.WDKWallet.from_env", lambda **_: FakeWDKWallet())
     monkeypatch.setenv("SETTLEMENT_CONTRACT_ADDRESS", "0x9999999999999999999999999999999999999999")
@@ -255,15 +251,18 @@ async def test_submit_buyer_deposit_prefers_wdk(monkeypatch):
     tx_hash = await agent._submit_buyer_deposit("req_test_001", 100000)
 
     assert tx_hash == "0xdeposit"
-    assert [entry[0] for entry in calls] == ["load", "approve", "deposit"]
-    assert calls[1][2]["spender"] == "0x9999999999999999999999999999999999999999"
-    assert calls[2][2]["request_id"] == "req_test_001"
+    assert calls[0][0] == "approve_and_deposit"
+    assert calls[0][2]["request_id"] == "req_test_001"
+    assert calls[0][2]["spender"] == "0x9999999999999999999999999999999999999999"
 
 
 @pytest.mark.asyncio
 async def test_submit_buyer_deposit_falls_back_after_wdk_error(monkeypatch):
     class BrokenWDKWallet:
         async def ensure_wallet_loaded(self) -> str:
+            return "0x1111111111111111111111111111111111111111"
+
+        async def approve_and_deposit(self, **kwargs):
             raise RuntimeError("sidecar unavailable")
 
     monkeypatch.setattr("buyer_agent.client.WDKWallet.from_env", lambda **_: BrokenWDKWallet())

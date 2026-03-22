@@ -307,6 +307,37 @@ class WDKWallet:
         )
         return str(data.get("txHash", ""))
 
+    async def approve_and_deposit(
+        self,
+        *,
+        spender: str,
+        request_id: str,
+        amount: str | int,
+        token_address: str,
+        settlement_contract: str,
+        buyer_address: str | None = None,
+    ) -> dict[str, Any]:
+        """Atomically approve and deposit in one server-side operation.
+
+        Uses the /wallet/approve-and-deposit endpoint which retries deposit
+        up to 2 times on failure and returns both tx hashes.
+        """
+        address = await self.ensure_wallet_loaded()
+        data = await self._request(
+            "POST",
+            "/wallet/approve-and-deposit",
+            json_body={
+                "address": address,
+                "spender": spender,
+                "requestId": request_id,
+                "buyer": buyer_address or address,
+                "amount": str(amount),
+                "tokenAddress": token_address,
+                "settlementContract": settlement_contract,
+            },
+        )
+        return data
+
     async def sign_message(self, message: str) -> str:
         address = await self.ensure_wallet_loaded()
         data = await self._request(
