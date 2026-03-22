@@ -11,9 +11,10 @@ import type {
 
 const DEFAULT_TIMEOUT = 15000
 
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+async function apiFetch<T>(url: string, options?: RequestInit & { timeout?: number }): Promise<T> {
+  const timeout = options?.timeout ?? DEFAULT_TIMEOUT
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
+  const timer = setTimeout(() => controller.abort(), timeout)
   try {
     const res = await fetch(url, { ...options, signal: controller.signal })
     if (!res.ok) {
@@ -80,6 +81,7 @@ export async function runDemo(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    timeout: 60000,
   })
 }
 

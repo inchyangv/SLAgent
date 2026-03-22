@@ -11,6 +11,7 @@ interface AutopilotState {
   lastResult: DemoRunResult | null
   tickCount: number
   _intervalId: ReturnType<typeof setInterval> | null
+  _ticking: boolean
 
   start: () => void
   stop: () => void
@@ -23,6 +24,7 @@ export const useAutopilotStore = create<AutopilotState>()((set, get) => ({
   lastResult: null,
   tickCount: 0,
   _intervalId: null,
+  _ticking: false,
 
   _tick: async () => {
     const { gatewayUrl, sellerUrl, currentPreset } =
@@ -30,7 +32,8 @@ export const useAutopilotStore = create<AutopilotState>()((set, get) => ({
     const addLog = useLogStore.getState().addLog
     const addToast = useToastStore.getState().addToast
 
-    if (!get().isRunning) return
+    if (!get().isRunning || get()._ticking) return
+    set({ _ticking: true })
 
     const presetCfg = SIM_PRESETS[currentPreset]
     const preset = {
@@ -58,6 +61,8 @@ export const useAutopilotStore = create<AutopilotState>()((set, get) => ({
       const msg = err instanceof Error ? err.message : String(err)
       addLog(`[tick] ERROR: ${msg}`, 'err')
       addToast(`Autopilot tick failed: ${msg}`, 'error')
+    } finally {
+      set({ _ticking: false })
     }
   },
 
