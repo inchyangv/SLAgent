@@ -1,26 +1,82 @@
-Short description (A max 100-character or less description of your project, it should fit in a tweet!)
+Short description (max 100 chars)
 
-Description (Go into as much detail as you can about what this project is. Please be as clear as possible! (min 280 characters))
+AI agents pay each other by proof — escrow locks max price, SLA measurement splits payout on-chain.
 
-How it's made
-(Tell us about how you built this project; the nitty-gritty details. What technologies did you use? How are they pieced together? Did you do anything particularly hacky that's notable and worth mentioning? (min 280 characters))
+
+Description (min 280, max 900 chars)
+
+SLAgent is a pay-by-performance settlement layer for AI agent commerce. When Agent A buys a service from Agent B, it shouldn't pay the same regardless of quality.
+
+The buyer locks max_price into on-chain escrow via WDK wallet. A gateway measures real performance — latency and JSON schema validity. A deterministic pricing engine computes payout from SLA tiers: fast+valid = full pay, slow = partial refund, invalid = full refund. The settlement contract splits funds automatically — seller gets payout, buyer gets the rest back. Receipt hash is emitted on-chain.
+
+Three-party attestation (buyer, seller, gateway) signs each receipt. Disputes use bonded challenges with slashing. No LLM scoring on the settlement path — only deterministic validators.
+
+Deployed on Ethereum Sepolia with mock USDT. Works with any AI API — just put the gateway in front of it.
+
+
+How it's made (min 280, max 900 chars)
+
+WDK sidecar (Node.js): @tetherto/wdk + wdk-wallet-evm for approve, deposit, sign. Nonce manager, circuit breaker, retry. One mnemonic derives all role keys.
+
+Settlement contract (Solidity/Foundry): deposit->settle->finalize with escrow. openDispute requires bond, resolveDispute slashes wrongful challengers. Receipt hash on-chain.
+
+Gateway (Python/FastAPI): Reverse proxy measuring TTFT+latency, JSON Schema validation, latency-tier payout, receipt signing, on-chain settlement. Full event ledger.
+
+Buyer Agent (Python): Autonomous loop — discover seller, negotiate SLA via Gemini, WDK approve+deposit, call gateway, verify receipt invariants, 3-party attestation, dispute on breach.
+
+Seller (FastAPI + Gemini 2.0 Flash): Controllable demo modes.
+
+Dashboard (React+Vite): Live simulator, autopilot, receipts, timeline, disputes. Railway + Vercel deployed.
+
 
 GitHub Repositories
-(Add any repositories that contain code for your project. Please make sure the repositories are public.)
 
-Link to the demo (3–5 minute walkthrough video)
+https://github.com/inchyangv/SLAgent
+
+
+Link to the demo (3-5 minute walkthrough video)
+
+[TODO: video link]
+
 
 Which blockchain networks does your project interact with?
 
+Ethereum Sepolia (chainId 11155111)
+
+
 What AI Agent are you using for your project?
 
-Are there any other specific technologies, libraries, frameworks, or tools you're making heavy usage of that don't fit into the categories above?
+Gemini 2.0 Flash — used by the Seller Agent for LLM-powered invoice generation and by the Gateway for optional SLA policy evaluation and mandate negotiation.
+
+
+Are there any other specific technologies, libraries, frameworks, or tools you're making heavy usage of?
+
+- @tetherto/wdk + @tetherto/wdk-wallet-evm (wallet infrastructure)
+- Foundry (Solidity contract development + testing)
+- FastAPI + httpx (gateway + seller services)
+- ethers.js v6 (WDK sidecar on-chain interactions)
+- web3.py + eth-account (gateway settlement client)
+- React + Vite + TanStack Query + Recharts (dashboard)
+- x402 HTTP payment standard (402 Payment Required flow)
+
 
 Which track(s) are you applying to?
 
-Explain how your project aligns with the track(s) you selected and why it fits their objectives.
+Agent Wallets (WDK / Openclaw and Agents Integration), Autonomous DeFi Agent
+
+
+Explain how your project aligns with the track(s) you selected (max 900 chars)
+
+Agent Wallets: SLAgent is built on WDK. Every wallet operation — approve, deposit, sign, attest — goes through the @tetherto/wdk sidecar. Buyer, seller, and gateway each hold independent WDK-derived EOAs. The buyer agent autonomously executes approve->deposit->call->verify->attest with zero human input. Production-grade WDK usage: nonce management, circuit breaker, RPC fallback, structured logging.
+
+Autonomous DeFi Agent: Escrow->conditional settlement is classic DeFi, operated entirely by agents. The buyer manages budget autonomously — selects SLA tiers, tracks per-call spend, opens disputes on breach. Bond slashing on wrongful disputes provides trustless guarantees. The settlement contract enforces payout<=max_price at contract level, making the economics sound without trust.
+
 
 Which modules or sections from the documentation were most useful to you?
-(e.g. "wallet-evm, React Native quickstart")
+
+wallet-evm, WDK AI Docs, MCP tools documentation
+
 
 What's the one thing we should fix or add next to the WDK documentation?
+
+Add a guide for "agent-to-contract" flows — approve + custom contract call patterns. Most docs cover wallet-to-wallet transfers, but agent use cases need approve->deposit->settle with custom Solidity contracts. A cookbook would save significant integration time.
