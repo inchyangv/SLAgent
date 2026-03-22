@@ -21,8 +21,53 @@ const DEFAULT_SETTLEMENT_ADDRESS =
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 const AUTH_TOKEN = process.env.WDK_AUTH_TOKEN || "";
 
+// --- Metrics counters ---
+const metrics = {
+  requests_total: {},   // key: "METHOD /path STATUS" → count
+  request_durations: {}, // key: "METHOD /path" → [duration_ms, ...]
+};
+
+function metricsIncr(method, path, status) {
+  const key = `${method} ${path} ${status}`;
+  metrics.requests_total[key] = (metrics.requests_total[key] || 0) + 1;
+}
+
+function metricsRecordDuration(method, path, durationMs) {
+  const key = `${method} ${path}`;
+  if (!metrics.request_durations[key]) metrics.request_durations[key] = [];
+  metrics.request_durations[key].push(durationMs);
+  // Keep only last 1000 samples
+  if (metrics.request_durations[key].length > 1000) {
+    metrics.request_durations[key].shift();
+  }
+}
+
 const app = express();
 app.use(express.json());
+
+// Request logging + metrics middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const durationMs = Date.now() - start;
+    // Redact sensitive fields from log output — never log seeds/keys
+    const logLine = {
+      ts: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration_ms: durationMs,
+    };
+    // Attach wallet address if present in request body (not seed phrase)
+    if (req.body?.address) {
+      logLine.wallet_address = req.body.address;
+    }
+    console.log(JSON.stringify(logLine));
+    metricsIncr(req.method, req.path, res.statusCode);
+    metricsRecordDuration(req.method, req.path, durationMs);
+  });
+  next();
+});
 
 // Bearer token auth middleware — only active when WDK_AUTH_TOKEN is set
 app.use((req, res, next) => {
@@ -421,6 +466,36 @@ app.post("/wallet/sign-bytes", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// --- Metrics endpoint ---
+app.get("/metrics", (_req, res) => {
+  const lines = [];
+
+  // wdk_requests_total counter
+  for (const [key, count] of Object.entries(metrics.requests_total)) {
+    const [method, path, status] = key.split(" ");
+    lines.push(`wdk_requests_total{method="${method}",path="${path}",status="${status}"} ${count}`);
+  }
+
+  // wdk_request_duration_ms histogram (p50, p95, count, sum)
+  for (const [key, durations] of Object.entries(metrics.request_durations)) {
+    const [method, path] = key.split(" ");
+    const sorted = [...durations].sort((a, b) => a - b);
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    const p50 = sorted[Math.floor(sorted.length * 0.5)] ?? 0;
+    const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
+    const labelBase = `method="${method}",path="${path}"`;
+    lines.push(`wdk_request_duration_ms_p50{${labelBase}} ${p50}`);
+    lines.push(`wdk_request_duration_ms_p95{${labelBase}} ${p95}`);
+    lines.push(`wdk_request_duration_ms_sum{${labelBase}} ${sum}`);
+    lines.push(`wdk_request_duration_ms_count{${labelBase}} ${sorted.length}`);
+  }
+
+  // wdk_wallets_loaded gauge
+  lines.push(`wdk_wallets_loaded ${wallets.size}`);
+
+  res.set("Content-Type", "text/plain; version=0.0.4").send(lines.join("\n") + "\n");
 });
 
 app.use((error, _req, res, _next) => {

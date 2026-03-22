@@ -170,6 +170,7 @@ class WDKWallet:
                 delay = _RETRY_BACKOFF[min(attempt - 1, len(_RETRY_BACKOFF) - 1)]
                 await asyncio.sleep(delay)
 
+            t0 = time.monotonic()
             try:
                 client = self._get_async_client()
                 response = await client.request(
@@ -179,6 +180,8 @@ class WDKWallet:
                     headers=self._get_headers(),
                 )
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                duration_ms = int((time.monotonic() - t0) * 1000)
+                logger.debug("WDK %s %s failed in %dms (attempt %d): %s", method, path, duration_ms, attempt + 1, exc)
                 last_exc = exc
                 logger.warning("WDK request failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
                 self._cb_record_failure()
@@ -201,6 +204,8 @@ class WDKWallet:
                 self._cb_record_failure()
                 raise WDKServiceError(data.get("error", f"wdk-service {response.status_code}"))
 
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            logger.debug("WDK %s %s → %d in %dms", method, path, response.status_code, duration_ms)
             self._cb_record_success()
             return data
 
