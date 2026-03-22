@@ -18,11 +18,13 @@ const typePrefix: Record<string, string> = {
 export function ActivityLog() {
   const entries = useLogStore((s) => s.entries)
   const clear = useLogStore((s) => s.clear)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom on new entry
+  // Auto-scroll within container only (not the whole page)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
+    }
   }, [entries.length])
 
   return (
@@ -40,6 +42,7 @@ export function ActivityLog() {
       </CardHeader>
       <CardBody className="p-0">
         <div
+          ref={containerRef}
           className="overflow-y-auto font-mono text-xs px-3 py-2"
           style={{
             maxHeight: 160,
@@ -58,7 +61,7 @@ export function ActivityLog() {
                   {typePrefix[e.type] ?? '·'}
                 </span>
                 <span className="shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                  {new Date(e.ts).toLocaleTimeString('ko-KR', { hour12: false })}
+                  {new Date(e.ts).toLocaleTimeString('en-US', { hour12: false })}
                 </span>
                 <span style={{ color: 'var(--color-text-secondary)', wordBreak: 'break-all' }}>
                   {e.msg}
@@ -66,7 +69,6 @@ export function ActivityLog() {
               </div>
             ))
           )}
-          <div ref={bottomRef} />
         </div>
       </CardBody>
     </Card>
