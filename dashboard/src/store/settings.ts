@@ -43,15 +43,11 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'slagent-402-settings',
       merge: (persisted, current) => {
         const merged = { ...current, ...(persisted as Partial<SettingsState>) }
-        // Env vars always win over persisted localhost defaults
+        // Env vars always override persisted values — production URLs must win
         const envGw = import.meta.env.VITE_GATEWAY_URL
         const envSeller = import.meta.env.VITE_SELLER_URL
-        if (envGw && (merged.gatewayUrl === 'http://localhost:8000' || !merged.gatewayUrl)) {
-          merged.gatewayUrl = envGw
-        }
-        if (envSeller && (merged.sellerUrl === 'http://localhost:8001' || !merged.sellerUrl)) {
-          merged.sellerUrl = envSeller
-        }
+        if (envGw) merged.gatewayUrl = envGw
+        if (envSeller) merged.sellerUrl = envSeller
         return merged
       },
     },
