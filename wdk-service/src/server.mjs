@@ -201,6 +201,16 @@ function getWalletSigner(record) {
   return new ethers.Wallet(ethers.hexlify(privateKey));
 }
 
+async function waitForTxReceipt(txHash) {
+  const receipt = await provider.waitForTransaction(txHash, 1, 60_000);
+  if (!receipt) throw new Error(`no receipt for ${txHash}`);
+  return {
+    status: Number(receipt.status),
+    blockNumber: receipt.blockNumber,
+    gasUsed: receipt.gasUsed?.toString() ?? null,
+  };
+}
+
 async function withTimeout(promise, ms) {
   let timerId;
   const timeoutPromise = new Promise((_, reject) => {
@@ -298,7 +308,7 @@ app.get("/wallet/:address/balance", async (req, res, next) => {
 
 app.post("/wallet/transfer", async (req, res, next) => {
   try {
-    const { address, to, amount, tokenAddress } = req.body || {};
+    const { address, to, amount, tokenAddress, waitForReceipt = false } = req.body || {};
     if (!address || !to || amount == null) {
       throw badRequest("address, to, and amount are required");
     }
@@ -309,11 +319,15 @@ app.post("/wallet/transfer", async (req, res, next) => {
         amount: normalizeValue(amount),
         tokenAddress: getTokenAddress(tokenAddress),
       });
-      // track last-used nonce optimistically
       const nonce = await getNextNonce(address);
       pendingNonce.set(String(address).toLowerCase(), nonce);
       return result;
     });
+    if (waitForReceipt) {
+      const receipt = await waitForTxReceipt(txHash);
+      if (receipt.status === 0) return res.status(500).json({ error: "tx reverted", txHash, receipt });
+      return res.json({ txHash, receipt });
+    }
     res.json({ txHash });
   } catch (error) {
     next(error);
@@ -322,7 +336,7 @@ app.post("/wallet/transfer", async (req, res, next) => {
 
 app.post("/wallet/approve", async (req, res, next) => {
   try {
-    const { address, spender, amount, tokenAddress } = req.body || {};
+    const { address, spender, amount, tokenAddress, waitForReceipt = false } = req.body || {};
     if (!address || !spender || amount == null) {
       throw badRequest("address, spender, and amount are required");
     }
@@ -337,6 +351,11 @@ app.post("/wallet/approve", async (req, res, next) => {
       pendingNonce.set(String(address).toLowerCase(), nonce);
       return result;
     });
+    if (waitForReceipt) {
+      const receipt = await waitForTxReceipt(txHash);
+      if (receipt.status === 0) return res.status(500).json({ error: "tx reverted", txHash, receipt });
+      return res.json({ txHash, receipt });
+    }
     res.json({ txHash });
   } catch (error) {
     next(error);
@@ -345,7 +364,7 @@ app.post("/wallet/approve", async (req, res, next) => {
 
 app.post("/wallet/deposit", async (req, res, next) => {
   try {
-    const { address, requestId, buyer, amount, settlementContract } = req.body || {};
+    const { address, requestId, buyer, amount, settlementContract, waitForReceipt = false } = req.body || {};
     if (!address || !requestId || amount == null) {
       throw badRequest("address, requestId, and amount are required");
     }
@@ -370,6 +389,11 @@ app.post("/wallet/deposit", async (req, res, next) => {
     } catch (txErr) {
       rollbackNonce(address);
       throw txErr;
+    }
+    if (waitForReceipt) {
+      const receipt = await waitForTxReceipt(txHash);
+      if (receipt.status === 0) return res.status(500).json({ error: "tx reverted", txHash, receipt });
+      return res.json({ txHash, receipt });
     }
     res.json({ txHash });
   } catch (error) {

@@ -276,6 +276,7 @@ class WDKWallet:
         spender: str,
         amount: str | int,
         token_address: str,
+        wait_for_receipt: bool = False,
     ) -> str:
         address = await self.ensure_wallet_loaded()
         data = await self._request(
@@ -286,6 +287,7 @@ class WDKWallet:
                 "spender": spender,
                 "amount": str(amount),
                 "tokenAddress": token_address,
+                "waitForReceipt": wait_for_receipt,
             },
         )
         return str(data.get("txHash", ""))
@@ -297,6 +299,7 @@ class WDKWallet:
         amount: str | int,
         settlement_contract: str,
         buyer_address: str | None = None,
+        wait_for_receipt: bool = False,
     ) -> str:
         address = await self.ensure_wallet_loaded()
         data = await self._request(
@@ -308,6 +311,7 @@ class WDKWallet:
                 "buyer": buyer_address or address,
                 "amount": str(amount),
                 "settlementContract": settlement_contract,
+                "waitForReceipt": wait_for_receipt,
             },
         )
         return str(data.get("txHash", ""))
