@@ -87,21 +87,21 @@ export function relativeTime(ts: string | number | undefined | null): string {
   if (isNaN(d.getTime())) return String(ts)
   const diffMs = Date.now() - d.getTime()
   const diffSec = Math.floor(diffMs / 1000)
-  if (diffSec < 5) return '방금'
-  if (diffSec < 60) return `${diffSec}초 전`
+  if (diffSec < 5) return 'just now'
+  if (diffSec < 60) return `${diffSec}s ago`
   const diffMin = Math.floor(diffSec / 60)
-  if (diffMin < 60) return `${diffMin}분 전`
+  if (diffMin < 60) return `${diffMin}m ago`
   const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return `${diffHr}시간 전`
+  if (diffHr < 24) return `${diffHr}h ago`
   const diffDay = Math.floor(diffHr / 24)
-  return `${diffDay}일 전`
+  return `${diffDay}d ago`
 }
 
 export function formatDate(ts: string | undefined | null): string {
   if (!ts) return '—'
   const d = new Date(ts)
   if (isNaN(d.getTime())) return ts
-  return d.toLocaleString('ko-KR', {
+  return d.toLocaleString('en-US', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',

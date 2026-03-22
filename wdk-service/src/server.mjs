@@ -11,7 +11,7 @@ const SETTLEMENT_ABI = JSON.parse(
   readFileSync(join(__dirname, "../../shared/abi/settlement.json"), "utf8")
 );
 
-const PORT = Number(process.env.WDK_PORT || 3100);
+const PORT = Number(process.env.PORT || process.env.WDK_PORT || 3100);
 const CHAIN_NAME = process.env.WDK_CHAIN_NAME || "ethereum";
 const RPC_URL = process.env.WDK_EVM_RPC_URL || process.env.CHAIN_RPC_URL || "https://rpc.sepolia.org";
 const RPC_URL_FALLBACK = process.env.WDK_EVM_RPC_URL_FALLBACK || "";

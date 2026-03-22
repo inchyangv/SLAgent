@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SLAgent-402 — Demo Console</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #242736;
+    --border: #2e3247;
+    --text: #e0e4f0;
+    --text2: #8b91a8;
+    --accent: #6c7aff;
+    --green: #22c55e;
+    --yellow: #facc15;
+    --red: #f87171;
+    --orange: #fb923c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+  header span.tag { background: var(--accent); color: white; font-size: 10px; padding: 2px 7px; border-radius: 99px; }
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; height: calc(100vh - 49px); }
+  .sidebar { background: var(--bg2); border-right: 1px solid var(--border); overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .main { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .card-header { padding: 10px 14px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+  .card-body { padding: 14px; }
+  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  input[type="text"], input[type="number"], select {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+    padding: 7px 10px; font-size: 13px; outline: none; transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .field { margin-bottom: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 7px; border: none;
+    cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity .15s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-green { background: var(--green); color: #111; }
+  .btn-red { background: var(--red); color: #111; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-block { width: 100%; justify-content: center; }
+  .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: #14532d; color: var(--green); }
+  .badge-red { background: #450a0a; color: var(--red); }
+  .badge-yellow { background: #422006; color: var(--yellow); }
+  .badge-blue { background: #1e3a5f; color: #60a5fa; }
+  .badge-gray { background: var(--bg3); color: var(--text2); }
+  .pill { background: var(--bg3); border: 1px solid var(--border); border-radius: 99px; padding: 2px 8px; font-size: 11px; color: var(--text2); display: inline-block; margin: 2px; }
+  .pill.breach { background: #450a0a; border-color: var(--red); color: var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg3); cursor: pointer; }
+  .timeline { display: flex; flex-direction: column; gap: 6px; }
+  .event { display: flex; gap: 10px; align-items: flex-start; }
+  .event-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex-shrink: 0; }
+  .event-dot.green { background: var(--green); }
+  .event-dot.red { background: var(--red); }
+  .event-dot.yellow { background: var(--yellow); }
+  .event-content { flex: 1; }
+  .event-kind { font-size: 12px; font-weight: 600; color: var(--text); }
+  .event-ts { font-size: 11px; color: var(--text2); }
+  .event-data { font-size: 11px; color: var(--text2); font-family: monospace; margin-top: 2px; }
+  .log { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 10px; font-family: monospace; font-size: 12px; color: var(--text2); min-height: 80px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  .log .ok { color: var(--green); }
+  .log .err { color: var(--red); }
+  .log .info { color: var(--accent); }
+  .sep { height: 1px; background: var(--border); margin: 8px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-val { font-size: 20px; font-weight: 700; color: var(--text); }
+  .stat-label { font-size: 11px; color: var(--text2); }
+  #receipt-detail { display: none; }
+  .tx-link { color: var(--accent); text-decoration: none; font-family: monospace; font-size: 11px; }
+  .tx-link:hover { text-decoration: underline; }
+  .offer-selector { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .offer-btn { padding: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg3); cursor: pointer; text-align: center; transition: all .15s; }
+  .offer-btn:hover, .offer-btn.active { border-color: var(--accent); background: rgba(108,122,255,.1); }
+  .offer-btn .offer-name { font-weight: 700; font-size: 13px; }
+  .offer-btn .offer-price { font-size: 11px; color: var(--text2); }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ SLAgent-402</h1>
+  <span class="tag">Demo Console</span>
+  <span style="margin-left:auto; color:var(--text2); font-size:12px" id="network-status">Connecting…</span>
+</header>
+<div class="layout">
+  <!-- Sidebar: controls -->
+  <div class="sidebar">
+    <!-- Network config -->
+    <div class="card">
+      <div class="card-header">🌐 Network</div>
+      <div class="card-body">
+        <div class="field">
+          <label>Gateway URL</label>
+          <input id="gw-url" type="text" value="" placeholder="http://localhost:8000" />
+        </div>
+        <div class="field">
+          <label>Seller URL</label>
+          <input id="seller-url" type="text" value="" placeholder="http://localhost:8001" />
+        </div>
+        <button class="btn btn-primary btn-block btn-sm" onclick="refreshAll()">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <!-- SLA Offer selector -->
+    <div class="card">
+      <div class="card-header">📋 SLA Offer</div>
+      <div class="card-body">
+        <div class="offer-selector" id="offer-selector"></div>
+      </div>
+    </div>
+
+    <!-- SLA Simulator controls (T-144) -->
+    <div class="card">
+      <div class="card-header">🎮 Simulator</div>
+      <div class="card-body">
+        <div class="field">
+          <label>Latency delay: <span id="delay-label">0</span>ms</label>
+          <input type="range" id="delay-ms" min="0" max="8000" step="100" value="0" oninput="document.getElementById('delay-label').textContent=this.value" />
+        </div>
+        <div class="toggle field" onclick="toggleForceError()">
+          <input type="checkbox" id="force-error" />
+          <span>Force Error Response</span>
+        </div>
+        <div class="toggle field" onclick="toggleForceInvalid()">
+          <input type="checkbox" id="force-invalid" />
+          <span>Force Invalid Schema</span>
+        </div>
+        <div class="sep"></div>
+        <div class="field">
+          <label>Mode</label>
+          <select id="run-mode">
+            <option value="fast">Fast (happy path)</option>
+            <option value="slow">Slow (latency SLA breach)</option>
+            <option value="invalid">Invalid (schema fail → refund)</option>
+            <option value="error">Error (upstream fail)</option>
+            <option value="timeout">Timeout</option>
+          </select>
+        </div>
+        <button class="btn btn-green btn-block" id="run-btn" onclick="runDemo()">▶ Run Scenario</button>
+      </div>
+    </div>
+
+    <!-- Disputes -->
+    <div class="card">
+      <div class="card-header">⚖️ Disputes</div>
+      <div class="card-body">
+        <div class="field">
+          <label>Request ID</label>
+          <input id="dispute-req-id" type="text" placeholder="req_..." />
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-sm btn-primary" onclick="openDispute()">Open</button>
+          <button class="btn btn-sm" style="background:var(--yellow);color:#111" onclick="resolveDispute()">Resolve</button>
+          <button class="btn btn-sm" style="background:var(--orange);color:#111" onclick="finalizeDispute()">Finalize</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+    <!-- Stats row -->
+    <div class="grid2">
+      <div class="card">
+        <div class="card-header">📊 Summary</div>
+        <div class="card-body grid2">
+          <div><div class="stat-val" id="stat-total">0</div><div class="stat-label">Total Requests</div></div>
+          <div><div class="stat-val" id="stat-success" style="color:var(--green)">0</div><div class="stat-label">Successful</div></div>
+          <div><div class="stat-val" id="stat-payout" style="color:var(--accent)">0</div><div class="stat-label">Avg Payout</div></div>
+          <div><div class="stat-val" id="stat-latency" style="color:var(--yellow)">—</div><div class="stat-label">Avg Latency</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">📡 Run Log</div>
+        <div class="card-body">
+          <div class="log" id="run-log">Ready. Select a scenario and click Run.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receipts table -->
+    <div class="card">
+      <div class="card-header">🧾 Receipts
+        <span style="margin-left:auto">
+          <input id="search-req" type="text" placeholder="Search request_id…" style="width:180px" oninput="filterReceipts()" />
+        </span>
+      </div>
+      <div class="card-body" style="padding:0; overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Request ID</th><th>Mode</th><th>Payout</th><th>Refund</th><th>Latency</th><th>Valid</th><th>TX</th><th>SLA Status</th>
+            </tr>
+          </thead>
+          <tbody id="receipts-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Receipt detail panel -->
+    <div class="card" id="receipt-detail">
+      <div class="card-header">🔍 Receipt Detail
+        <button class="btn btn-sm" style="margin-left:auto;background:var(--bg3)" onclick="document.getElementById('receipt-detail').style.display='none'">✕ Close</button>
+      </div>
+      <div class="card-body" id="receipt-detail-body"></div>
+    </div>
+
+    <!-- Event Timeline (T-138 / T-139) -->
+    <div class="card">
+      <div class="card-header">⏱ Event Timeline
+        <span style="margin-left:auto; display:flex; gap:6px; align-items:center;">
+          <input id="filter-req-id" type="text" placeholder="Filter by request_id…" style="width:200px" oninput="loadEvents()" />
+          <label class="toggle" style="margin:0">
+            <input type="checkbox" id="filter-breach" onchange="loadEvents()" />
+            <span style="font-size:12px; text-transform:none; font-weight:400">SLA breach only</span>
+          </label>
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="timeline" id="event-timeline"><span style="color:var(--text2)">No events yet.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const DEFAULT_GW = window.location.origin === 'null' || window.location.origin === ''
+  ? 'http://localhost:8000'
+  : (window.location.port ? window.location.origin : window.location.origin);
+const DEFAULT_SELLER = 'http://localhost:8001';
+
+function gwUrl() { return (document.getElementById('gw-url').value || DEFAULT_GW).replace(/\/$/, ''); }
+function sellerUrl() { return (document.getElementById('seller-url').value || DEFAULT_SELLER).replace(/\/$/, ''); }
+
+// Detect same-origin: if running from gateway, use relative paths
+(function() {
+  const input = document.getElementById('gw-url');
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!isLocal) {
+    input.value = window.location.origin;
+  }
+})();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allReceipts = [];
+let selectedOffer = null;
+const offers = {};
+
+// ── Offers ────────────────────────────────────────────────────────────────────
+async function loadOffers() {
+  try {
+    const r = await fetch(`${gwUrl()}/v1/demo/offers`);
+    const data = await r.json();
+    const container = document.getElementById('offer-selector');
+    container.innerHTML = '';
+    for (const o of data.offers || []) {
+      offers[o.offer_id] = o;
+      const btn = document.createElement('div');
+      btn.className = 'offer-btn';
+      btn.dataset.id = o.offer_id;
+      btn.innerHTML = `<div class="offer-name">${o.name}</div><div class="offer-price">${fmt(o.max_price)} max</div>`;
+      btn.onclick = () => selectOffer(o.offer_id);
+      container.appendChild(btn);
+    }
+    // Auto-select silver
+    const silver = Object.keys(offers).find(k => k.includes('silver'));
+    if (silver) selectOffer(silver);
+  } catch(e) { logMsg('warn', 'Failed to load offers: ' + e.message); }
+}
+
+function selectOffer(id) {
+  selectedOffer = id;
+  document.querySelectorAll('.offer-btn').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+}
+
+// ── Format helpers ────────────────────────────────────────────────────────────
+function fmt(v) { return v ? (Number(v) / 1e6).toFixed(4) + ' USDT' : '—'; }
+function fmtMs(v) { return v ? v + 'ms' : '—'; }
+function shortId(id) { return id ? (id.length > 20 ? id.slice(0, 10) + '…' + id.slice(-6) : id) : '—'; }
+function shortHash(h) { return h && h.length > 14 ? h.slice(0, 8) + '…' + h.slice(-6) : h; }
+function txLink(hash) {
+  if (!hash || hash.startsWith('mock') || hash === 'null') return '<span style="color:var(--text2)">mock</span>';
+  const explorer = 'https://testnet.explorer.skale.network/tx/';
+  return `<a class="tx-link" href="${explorer}${hash}" target="_blank">${shortHash(hash)}</a>`;
+}
+
+function breachPills(reasons) {
+  if (!reasons || !reasons.length) return '';
+  return reasons.map(r => `<span class="pill breach">${r.replace('BREACH_', '')}</span>`).join('');
+}
+
+// ── Run Log ───────────────────────────────────────────────────────────────────
+function logMsg(type, msg) {
+  const el = document.getElementById('run-log');
+  const ts = new Date().toISOString().slice(11, 23);
+  const cls = type === 'ok' ? 'ok' : type === 'err' ? 'err' : 'info';
+  el.innerHTML += `<span class="${cls}">[${ts}] ${msg}\n</span>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Run Demo ──────────────────────────────────────────────────────────────────
+function toggleForceError() {
+  const cb = document.getElementById('force-error');
+  cb.checked = !cb.checked;
+}
+function toggleForceInvalid() {
+  const cb = document.getElementById('force-invalid');
+  cb.checked = !cb.checked;
+}
+
+async function runDemo() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+
+  const mode = document.getElementById('run-mode').value;
+  const delayMs = parseInt(document.getElementById('delay-ms').value) || 0;
+  const forceError = document.getElementById('force-error').checked;
+  const forceInvalid = document.getElementById('force-invalid').checked;
+
+  // Adjust mode based on toggles
+  let effectiveMode = mode;
+  if (forceError) effectiveMode = 'error';
+  else if (forceInvalid) effectiveMode = 'invalid';
+
+  logMsg('info', `▶ Running mode=${effectiveMode} delay=${delayMs}ms offer=${selectedOffer || 'default'}`);
+
+  const body = {
+    modes: [effectiveMode],
+    seller_url: sellerUrl(),
+    delay_ms: delayMs,
+    negotiate: true,
+    simulator: { preset: effectiveMode, delay_ms: delayMs },
+  };
+  if (selectedOffer) body.offer_id = selectedOffer;
+
+  try {
+    const r = await fetch(`${gwUrl()}/v1/demo/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+
+    if (!r.ok) {
+      logMsg('err', `Error: ${data.detail || JSON.stringify(data)}`);
+    } else {
+      for (const result of data.results || []) {
+        const ok = result.ok;
+        logMsg(ok ? 'ok' : 'err',
+          `${ok ? '✓' : '✗'} mode=${result.mode} payout=${fmt(result.payout)} refund=${fmt(result.refund)} latency=${fmtMs(result.latency_ms)}`
+        );
+        if (result.breach_reasons?.length) {
+          logMsg('err', `  Breaches: ${result.breach_reasons.join(', ')}`);
+        }
+        if (result.tx_hash) logMsg('info', `  TX: ${result.tx_hash}`);
+      }
+      setTimeout(() => { loadReceipts(); loadEvents(); }, 500);
+    }
+  } catch(e) {
+    logMsg('err', 'Run failed: ' + e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ Run Scenario';
+  updateStats();
+}
+
+// ── Receipts ──────────────────────────────────────────────────────────────────
+async function loadReceipts() {
+  try {
+    const r = await fetch(`${gwUrl()}/v1/receipts?limit=50`);
+    const data = await r.json();
+    allReceipts = data.receipts || [];
+    renderReceipts(allReceipts);
+    updateStats();
+  } catch(e) { /* silent */ }
+}
+
+function filterReceipts() {
+  const q = document.getElementById('search-req').value.toLowerCase();
+  renderReceipts(allReceipts.filter(r => !q || r.request_id?.toLowerCase().includes(q)));
+}
+
+function renderReceipts(list) {
+  const tbody = document.getElementById('receipts-tbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text2)">No receipts yet. Run a scenario.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(r => {
+    const ok = r.outcome?.success;
+    const valid = r.validation?.overall_pass;
+    const breaches = r.breach_reasons || r.pricing?.breach_reasons || [];
+    const hasBreach = !ok || !valid || breaches.length > 0;
+    const slaStatus = hasBreach
+      ? `<span class="badge badge-red">SLA Breach</span>`
+      : `<span class="badge badge-green">OK</span>`;
+    return `<tr onclick="showReceiptDetail('${r.request_id}')">
+      <td><code style="font-size:11px">${shortId(r.request_id)}</code></td>
+      <td><span class="badge badge-blue">${r.mode || '?'}</span></td>
+      <td style="color:var(--green)">${fmt(r.pricing?.computed_payout)}</td>
+      <td style="color:var(--orange)">${fmt(r.pricing?.computed_refund)}</td>
+      <td>${fmtMs(r.metrics?.latency_ms)}</td>
+      <td>${valid ? '<span class="badge badge-green">✓</span>' : '<span class="badge badge-red">✗</span>'}</td>
+      <td>${txLink(r.settlement_tx_hash || r.tx_hash)}</td>
+      <td>${slaStatus}${breachPills(breaches)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function showReceiptDetail(reqId) {
+  try {
+    const r = await fetch(`${gwUrl()}/v1/receipts/${reqId}`);
+    const data = await r.json();
+    const detail = document.getElementById('receipt-detail');
+    const body = document.getElementById('receipt-detail-body');
+    const breaches = data.breach_reasons || data.pricing?.breach_reasons || [];
+
+    // Attestations
+    let attestHtml = '';
+    const attests = data.attestations?.attestations || [];
+    if (attests.length) {
+      attestHtml = `<div class="sep"></div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;">Attestations (${attests.length}/3)</div>
+        ${attests.map(a => `<div style="font-size:11px;color:var(--text2)">${a.role}: <code>${shortHash(a.signature)}</code> ${a.verified ? '✅' : '❌'}</div>`).join('')}`;
+    }
+
+    body.innerHTML = `
+      <div class="grid2" style="margin-bottom:12px">
+        <div><span class="stat-label">Request ID</span><br><code style="font-size:11px">${data.request_id}</code></div>
+        <div><span class="stat-label">Mandate ID</span><br><code style="font-size:11px">${shortHash(data.mandate_id) || '—'}</code></div>
+        <div><span class="stat-label">Payout</span><br><span style="color:var(--green)">${fmt(data.pricing?.computed_payout)}</span></div>
+        <div><span class="stat-label">Refund</span><br><span style="color:var(--orange)">${fmt(data.pricing?.computed_refund)}</span></div>
+        <div><span class="stat-label">Latency</span><br>${fmtMs(data.metrics?.latency_ms)}</div>
+        <div><span class="stat-label">TTFT</span><br>${fmtMs(data.metrics?.ttft_ms)}</div>
+        <div><span class="stat-label">Rule Applied</span><br><code style="font-size:11px">${data.pricing?.rule_applied || '—'}</code></div>
+        <div><span class="stat-label">Schema Valid</span><br>${data.validation?.overall_pass ? '✅' : '❌'}</div>
+      </div>
+      ${breaches.length ? `<div style="margin-bottom:8px"><span class="stat-label">SLA Breach Reasons</span><br>${breachPills(breaches)}</div>` : ''}
+      <div style="margin-bottom:8px"><span class="stat-label">TX Hash</span> ${txLink(data.settlement_tx_hash || data.tx_hash)}</div>
+      <div style="margin-bottom:8px"><span class="stat-label">Receipt Hash</span> <code style="font-size:11px">${shortHash(data.hashes?.receipt_hash)}</code></div>
+      ${attestHtml}
+      <div class="sep"></div>
+      <details><summary style="cursor:pointer;font-size:12px;color:var(--text2)">Raw JSON</summary>
+        <pre style="font-size:11px;color:var(--text2);overflow:auto;max-height:200px;margin-top:6px">${JSON.stringify(data, null, 2)}</pre>
+      </details>`;
+
+    detail.style.display = 'block';
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch(e) { logMsg('err', 'Failed to load receipt: ' + e.message); }
+}
+
+// ── Event Timeline ────────────────────────────────────────────────────────────
+async function loadEvents() {
+  const reqId = document.getElementById('filter-req-id').value.trim();
+  const breachOnly = document.getElementById('filter-breach').checked;
+  let url = `${gwUrl()}/v1/events?limit=100`;
+  if (reqId) url += `&request_id=${encodeURIComponent(reqId)}`;
+
+  try {
+    const r = await fetch(url);
+    const data = await r.json();
+    let events = data.events || [];
+    if (breachOnly) {
+      events = events.filter(e => e.kind.includes('breach') || e.data?.breach_reasons?.length);
+    }
+    renderTimeline(events);
+  } catch(e) { /* silent */ }
+}
+
+const EVENT_COLOR = {
+  'negotiation': 'blue',
+  'payment': 'yellow',
+  'execution': 'blue',
+  'validation': 'green',
+  'pricing': 'yellow',
+  'receipt': 'green',
+  'chain': 'green',
+  'attestation': 'blue',
+  'simulator': 'yellow',
+  'error': 'red',
+  'timeout': 'red',
+};
+
+function eventColor(kind) {
+  for (const [prefix, color] of Object.entries(EVENT_COLOR)) {
+    if (kind.startsWith(prefix)) return color;
+  }
+  if (kind.includes('fail') || kind.includes('error')) return 'red';
+  if (kind.includes('pass') || kind.includes('success') || kind.includes('settled')) return 'green';
+  return '';
+}
+
+function renderTimeline(events) {
+  const container = document.getElementById('event-timeline');
+  if (!events.length) {
+    container.innerHTML = '<span style="color:var(--text2)">No events. Run a scenario to see the SLA evidence timeline.</span>';
+    return;
+  }
+  container.innerHTML = events.slice().reverse().map(e => {
+    const color = eventColor(e.kind);
+    const dotClass = `event-dot${color ? ' ' + color : ''}`;
+    const ts = e.ts_iso || new Date(e.ts * 1000).toISOString().slice(11, 23);
+    const dataStr = e.data && Object.keys(e.data).length
+      ? Object.entries(e.data).slice(0, 3).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(' ')
+      : '';
+    const breaches = e.data?.breach_reasons || [];
+    return `<div class="event">
+      <div class="${dotClass}"></div>
+      <div class="event-content">
+        <div class="event-kind">${e.kind} <span style="font-size:11px;color:var(--text2)">${e.actor || ''}</span></div>
+        <div class="event-ts">${ts}${e.request_id ? ` · ${shortId(e.request_id)}` : ''}</div>
+        ${dataStr ? `<div class="event-data">${dataStr}</div>` : ''}
+        ${breaches.length ? breachPills(breaches) : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const total = allReceipts.length;
+  const success = allReceipts.filter(r => r.outcome?.success).length;
+  const payouts = allReceipts.map(r => Number(r.pricing?.computed_payout || 0)).filter(Boolean);
+  const latencies = allReceipts.map(r => r.metrics?.latency_ms).filter(Boolean);
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-success').textContent = success;
+  document.getElementById('stat-payout').textContent = payouts.length ? fmt(Math.round(payouts.reduce((a,b)=>a+b,0)/payouts.length)) : '—';
+  document.getElementById('stat-latency').textContent = latencies.length ? fmtMs(Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length)) : '—';
+}
+
+// ── Disputes ──────────────────────────────────────────────────────────────────
+async function openDispute() {
+  const reqId = document.getElementById('dispute-req-id').value.trim();
+  if (!reqId) { logMsg('err', 'Enter a request_id first'); return; }
+  try {
+    const r = await fetch(`${gwUrl()}/v1/disputes/${reqId}/open`, { method: 'POST' });
+    const d = await r.json();
+    logMsg(r.ok ? 'ok' : 'err', `Dispute open: ${JSON.stringify(d)}`);
+  } catch(e) { logMsg('err', e.message); }
+}
+async function resolveDispute() {
+  const reqId = document.getElementById('dispute-req-id').value.trim();
+  if (!reqId) { logMsg('err', 'Enter a request_id first'); return; }
+  try {
+    const r = await fetch(`${gwUrl()}/v1/disputes/${reqId}/resolve`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+    const d = await r.json();
+    logMsg(r.ok ? 'ok' : 'err', `Dispute resolve: ${JSON.stringify(d)}`);
+  } catch(e) { logMsg('err', e.message); }
+}
+async function finalizeDispute() {
+  const reqId = document.getElementById('dispute-req-id').value.trim();
+  if (!reqId) { logMsg('err', 'Enter a request_id first'); return; }
+  try {
+    const r = await fetch(`${gwUrl()}/v1/disputes/${reqId}/finalize`, { method: 'POST' });
+    const d = await r.json();
+    logMsg(r.ok ? 'ok' : 'err', `Dispute finalize: ${JSON.stringify(d)}`);
+  } catch(e) { logMsg('err', e.message); }
+}
+
+// ── Health check ──────────────────────────────────────────────────────────────
+async function checkHealth() {
+  const el = document.getElementById('network-status');
+  try {
+    const r = await fetch(`${gwUrl()}/v1/health`);
+    const d = await r.json();
+    el.textContent = r.ok ? `✅ Gateway OK (block ${d.block_number || d.chain?.block || '?'})` : '⚠️ Gateway error';
+    el.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+  } catch(e) {
+    el.textContent = '❌ Gateway unreachable';
+    el.style.color = 'var(--red)';
+  }
+}
+
+async function refreshAll() {
+  await checkHealth();
+  await loadOffers();
+  await loadReceipts();
+  await loadEvents();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+refreshAll();
+setInterval(() => { loadReceipts(); loadEvents(); }, 5000);
+setInterval(checkHealth, 10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY pyproject.toml .
+COPY seller/ seller/
+COPY shared/ shared/
+COPY gateway/ gateway/
+COPY buyer_agent/ buyer_agent/
+COPY facilitator/ facilitator/
+
+RUN pip install --no-cache-dir -e .
+
+EXPOSE 8001
+CMD uvicorn seller.main:app --host 0.0.0.0 --port ${PORT:-8001}

@@ -27,7 +27,7 @@ interface ResultRow {
 export function SimulatorControls() {
   const gatewayUrl = useSettingsStore((s) => s.gatewayUrl)
   const sellerUrl = useSettingsStore((s) => s.sellerUrl)
-  const addLog = useLogStore((s) => s.add)
+  const addLog = useLogStore((s) => s.addLog)
   const qc = useQueryClient()
 
   // Slider & toggle state

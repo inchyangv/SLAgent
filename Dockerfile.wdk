@@ -1,0 +1,12 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY wdk-service/package*.json ./
+RUN npm install --production
+
+COPY wdk-service/src/ src/
+COPY shared/abi/ /shared/abi/
+
+EXPOSE 3100
+CMD node src/server.mjs
