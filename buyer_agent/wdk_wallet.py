@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+import time
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("sla-gateway.wdk")
 
 
 ROLE_ACCOUNT_INDEX = {
@@ -15,6 +21,21 @@ ROLE_ACCOUNT_INDEX = {
     "gateway": 2,
     "resolver": 3,
 }
+
+# Retry config
+_MAX_RETRIES = 2
+_RETRY_BACKOFF = (0.5, 1.0)  # seconds per attempt
+_RETRYABLE_STATUS = {502, 503, 504}
+
+# Circuit breaker config
+_CB_FAILURE_THRESHOLD = 3
+_CB_RECOVERY_TIMEOUT = 30.0  # seconds
+
+
+class _CBState(Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
 
 
 class WDKServiceError(RuntimeError):
@@ -31,6 +52,10 @@ class WDKWallet:
 
     _address: str | None = field(default=None, init=False, repr=False)
     _async_client: httpx.AsyncClient | None = field(default=None, init=False, repr=False)
+    # Circuit breaker state
+    _cb_state: _CBState = field(default=_CBState.CLOSED, init=False, repr=False)
+    _cb_failures: int = field(default=0, init=False, repr=False)
+    _cb_opened_at: float = field(default=0.0, init=False, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -101,6 +126,35 @@ class WDKWallet:
             )
         return self._async_client
 
+    def _cb_check(self) -> None:
+        """Raise immediately if circuit is OPEN (and not ready to recover)."""
+        if self._cb_state == _CBState.OPEN:
+            elapsed = time.monotonic() - self._cb_opened_at
+            if elapsed >= _CB_RECOVERY_TIMEOUT:
+                self._cb_state = _CBState.HALF_OPEN
+                logger.info("WDK circuit: OPEN → HALF_OPEN after %.1fs", elapsed)
+            else:
+                raise WDKServiceError(
+                    f"WDK circuit open — service unavailable (retry in {_CB_RECOVERY_TIMEOUT - elapsed:.0f}s)"
+                )
+
+    def _cb_record_success(self) -> None:
+        if self._cb_state in (_CBState.HALF_OPEN, _CBState.OPEN):
+            logger.info("WDK circuit: → CLOSED after recovery")
+        self._cb_state = _CBState.CLOSED
+        self._cb_failures = 0
+
+    def _cb_record_failure(self) -> None:
+        self._cb_failures += 1
+        if self._cb_state == _CBState.HALF_OPEN:
+            self._cb_state = _CBState.OPEN
+            self._cb_opened_at = time.monotonic()
+            logger.warning("WDK circuit: HALF_OPEN → OPEN (probe failed)")
+        elif self._cb_failures >= _CB_FAILURE_THRESHOLD:
+            self._cb_state = _CBState.OPEN
+            self._cb_opened_at = time.monotonic()
+            logger.warning("WDK circuit: CLOSED → OPEN (%d failures)", self._cb_failures)
+
     async def _request(
         self,
         method: str,
@@ -108,17 +162,50 @@ class WDKWallet:
         *,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        client = self._get_async_client()
-        response = await client.request(
-            method,
-            path,
-            json=json_body,
-            headers=self._get_headers(),
-        )
-        data: dict[str, Any] = response.json()
-        if response.status_code >= 400:
-            raise WDKServiceError(data.get("error", f"wdk-service {response.status_code}"))
-        return data
+        self._cb_check()
+
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            if attempt > 0:
+                delay = _RETRY_BACKOFF[min(attempt - 1, len(_RETRY_BACKOFF) - 1)]
+                await asyncio.sleep(delay)
+
+            try:
+                client = self._get_async_client()
+                response = await client.request(
+                    method,
+                    path,
+                    json=json_body,
+                    headers=self._get_headers(),
+                )
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                last_exc = exc
+                logger.warning("WDK request failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, exc)
+                self._cb_record_failure()
+                continue
+
+            # Don't retry 4xx client errors
+            if 400 <= response.status_code < 500 and response.status_code not in _RETRYABLE_STATUS:
+                data: dict[str, Any] = response.json()
+                self._cb_record_failure()
+                raise WDKServiceError(data.get("error", f"wdk-service {response.status_code}"))
+
+            if response.status_code in _RETRYABLE_STATUS:
+                last_exc = WDKServiceError(f"wdk-service {response.status_code}")
+                logger.warning("WDK retryable error %d (attempt %d/%d)", response.status_code, attempt + 1, _MAX_RETRIES + 1)
+                self._cb_record_failure()
+                continue
+
+            data = response.json()
+            if response.status_code >= 400:
+                self._cb_record_failure()
+                raise WDKServiceError(data.get("error", f"wdk-service {response.status_code}"))
+
+            self._cb_record_success()
+            return data
+
+        self._cb_record_failure()
+        raise last_exc or WDKServiceError("WDK request failed after retries")
 
     async def close(self) -> None:
         """Close the underlying AsyncClient connection pool."""
