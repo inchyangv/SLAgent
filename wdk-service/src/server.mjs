@@ -107,7 +107,6 @@ app.get("/health", async (_req, res) => {
       chain: {
         name: network.name,
         chainId: network.chainId.toString(),
-        rpcUrl: RPC_URL,
       },
       block,
       loadedWallets: wallets.size,
@@ -118,7 +117,6 @@ app.get("/health", async (_req, res) => {
       chain: {
         name: CHAIN_NAME,
         chainId: null,
-        rpcUrl: RPC_URL,
       },
       block: null,
       loadedWallets: wallets.size,
@@ -132,9 +130,9 @@ app.post("/wallet/create", async (req, res, next) => {
     const accountIndex = Number(req.body?.accountIndex || 0);
     const seedPhrase = WDK.getRandomSeedPhrase();
     const record = await loadWallet(seedPhrase, accountIndex);
+    // NOTE: seedPhrase intentionally omitted — caller must store it securely via /wallet/import
     res.json({
       address: record.address,
-      seedPhrase,
       accountIndex: record.accountIndex,
       chain: CHAIN_NAME,
     });

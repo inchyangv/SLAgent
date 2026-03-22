@@ -56,6 +56,17 @@ class WDKWallet:
             expected_address=expected_address,
         )
 
+    def __repr__(self) -> str:
+        return (
+            f"WDKWallet(service_url={self.service_url!r}, "
+            f"seed_phrase='***', "
+            f"account_index={self.account_index!r}, "
+            f"address={self._address!r})"
+        )
+
+    def __str__(self) -> str:
+        return repr(self)
+
     @property
     def address(self) -> str:
         if not self._address:
