@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { WagmiProvider, createConfig, http } from 'wagmi'
 import { sepolia } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RainbowKitProvider, darkTheme, getDefaultConfig } from '@rainbow-me/rainbowkit'
+import { RainbowKitProvider, darkTheme, getDefaultConfig, Locale } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
 
 const config = getDefaultConfig({
@@ -29,6 +29,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
+          locale={'en-US' as Locale}
           theme={darkTheme({
             accentColor: 'var(--color-accent)',
             accentColorForeground: 'white',
