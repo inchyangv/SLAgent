@@ -406,9 +406,18 @@ app.post("/wallet/sign-bytes", async (req, res, next) => {
       throw badRequest("address and payload are required");
     }
     const record = getWalletRecord(address);
-    const signer = getWalletSigner(record);
-    const signature = await signer.signMessage(ethers.getBytes(String(payload)));
-    res.json({ signature });
+    const payloadBytes = ethers.getBytes(String(payload));
+
+    // Prefer WDK native signing; fall back to ethers.Wallet if unsupported
+    try {
+      // WDK account.sign() expects a hex string
+      const signature = await record.account.sign(ethers.hexlify(payloadBytes));
+      res.json({ signature, signing_method: "wdk_native" });
+    } catch (_wdkErr) {
+      const signer = getWalletSigner(record);
+      const signature = await signer.signMessage(payloadBytes);
+      res.json({ signature, signing_method: "ethers_fallback" });
+    }
   } catch (error) {
     next(error);
   }
