@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import nullcontext
+import threading
 from typing import Any
 
 from eth_account import Account
@@ -28,6 +28,7 @@ SETTLEMENT_ABI = load_settlement_abi()
 # Singleton settlement client
 _client: SettlementClient | None = None
 _gateway_wdk_wallet: WDKWallet | None = None
+_gateway_wdk_lock = threading.Lock()  # thread-safe singleton initialization
 
 
 def _normalize_addr(addr: str, label: str) -> str | None:
@@ -65,11 +66,12 @@ def _expected_gateway_address() -> str | None:
 
 def _get_gateway_wdk_wallet() -> WDKWallet | None:
     global _gateway_wdk_wallet
-    if _gateway_wdk_wallet is None:
-        _gateway_wdk_wallet = WDKWallet.from_env(
-            role="gateway",
-            expected_address=_expected_gateway_address(),
-        )
+    with _gateway_wdk_lock:
+        if _gateway_wdk_wallet is None:
+            _gateway_wdk_wallet = WDKWallet.from_env(
+                role="gateway",
+                expected_address=_expected_gateway_address(),
+            )
     return _gateway_wdk_wallet
 
 
@@ -105,6 +107,54 @@ def submit_deposit(
         return {"tx_hash": None, "mode": "error", "error": str(e)}
 
 
+async def _sign_settlement(
+    *,
+    client: SettlementClient,
+    mandate_id_bytes: bytes,
+    request_id_bytes: bytes,
+    buyer_addr: str,
+    seller_addr: str,
+    max_price: int,
+    payout: int,
+    receipt_hash_bytes: bytes,
+) -> tuple[bytes, str]:
+    """Sign settlement hash using WDK → local key → raise.
+
+    Returns (gateway_sig_bytes, gateway_address).
+    Raises RuntimeError if no signing key is configured.
+    """
+    digest = compute_settlement_hash(
+        mandate_id=mandate_id_bytes,
+        request_id=request_id_bytes,
+        buyer=buyer_addr,
+        seller=seller_addr,
+        max_price=max_price,
+        payout=payout,
+        receipt_hash=receipt_hash_bytes,
+    )
+    gateway_wallet = _get_gateway_wdk_wallet()
+    if gateway_wallet:
+        try:
+            sig_hex = await gateway_wallet.sign_bytes(Web3.to_hex(digest))
+            gateway_address = await gateway_wallet.ensure_wallet_loaded()
+            sig = bytes.fromhex(sig_hex[2:] if sig_hex.startswith("0x") else sig_hex)
+            return sig, gateway_address
+        except Exception as exc:
+            logger.warning("WDK signing failed, falling back to local key: %s", exc)
+
+    # Local key fallback
+    sig = client.sign_settlement(
+        mandate_id=mandate_id_bytes,
+        request_id=request_id_bytes,
+        buyer=buyer_addr,
+        seller=seller_addr,
+        max_price=max_price,
+        payout=payout,
+        receipt_hash=receipt_hash_bytes,
+    )
+    return sig, client.gateway_address
+
+
 async def settle_request(
     *,
     request_id: str,
@@ -137,50 +187,19 @@ async def settle_request(
         }
 
     try:
-        gateway_wallet = _get_gateway_wdk_wallet()
-        if gateway_wallet:
-            digest = compute_settlement_hash(
-                mandate_id=mandate_id_bytes,
-                request_id=request_id_bytes,
-                buyer=buyer_addr,
-                seller=seller_addr,
-                max_price=max_price,
-                payout=payout,
-                receipt_hash=receipt_hash_bytes,
-            )
-            gateway_sig_hex = await gateway_wallet.sign_bytes(Web3.to_hex(digest))
-            gateway_sig = bytes.fromhex(gateway_sig_hex[2:] if gateway_sig_hex.startswith("0x") else gateway_sig_hex)
-            gateway_address = await gateway_wallet.ensure_wallet_loaded()
-        else:
-            gateway_sig = client.sign_settlement(
-                mandate_id=mandate_id_bytes,
-                request_id=request_id_bytes,
-                buyer=buyer_addr,
-                seller=seller_addr,
-                max_price=max_price,
-                payout=payout,
-                receipt_hash=receipt_hash_bytes,
-            )
-            gateway_address = client.gateway_address
+        gateway_sig, gateway_address = await _sign_settlement(
+            client=client,
+            mandate_id_bytes=mandate_id_bytes,
+            request_id_bytes=request_id_bytes,
+            buyer_addr=buyer_addr,
+            seller_addr=seller_addr,
+            max_price=max_price,
+            payout=payout,
+            receipt_hash_bytes=receipt_hash_bytes,
+        )
     except RuntimeError:
         logger.info(f"Settlement signing skipped (no key): {request_id}")
         return {"tx_hash": None, "gateway_signature": "", "gateway_address": ""}
-    except Exception as exc:
-        logger.warning("WDK settlement signing failed, falling back to local key: %s", exc)
-        try:
-            gateway_sig = client.sign_settlement(
-                mandate_id=mandate_id_bytes,
-                request_id=request_id_bytes,
-                buyer=buyer_addr,
-                seller=seller_addr,
-                max_price=max_price,
-                payout=payout,
-                receipt_hash=receipt_hash_bytes,
-            )
-            gateway_address = client.gateway_address
-        except RuntimeError:
-            logger.info(f"Settlement signing skipped (no key): {request_id}")
-            return {"tx_hash": None, "gateway_signature": "", "gateway_address": ""}
 
     sig_hex = "0x" + gateway_sig.hex()
 
