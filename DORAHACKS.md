@@ -226,3 +226,193 @@ python scripts/demo_one_command.py
 - Dispute resolver is centralized in MVP
 - Mock USDT on testnet — not production liquidity
 - Single-gateway topology (no multi-gateway federation yet)
+
+---
+
+## DoraHacks Submission Answers (Copy-Paste Ready)
+
+아래는 DoraHacks BUIDL 제출 폼 각 필드에 복붙할 플레인 텍스트.
+
+---
+
+### BUIDL Name
+
+SLAgent
+
+---
+
+### One-Liner / Short Description
+
+Autonomous AI agents trade services using WDK wallets, with on-chain escrow that settles payment based on measured SLA performance — not trust.
+
+---
+
+### Track
+
+Agent Wallets (WDK / Openclaw and Agents Integration)
+
+---
+
+### Description (Long)
+
+SLAgent is a pay-by-performance settlement layer for autonomous agent-to-agent API calls. When an AI buyer agent calls another AI seller agent's API, payment is no longer fixed — it is determined by measured SLA outcomes.
+
+The buyer agent uses a WDK wallet sidecar to deposit max_price into an on-chain escrow before execution. After the seller responds, the gateway measures latency, validates output against a JSON schema, and deterministically computes payout based on latency tiers. The settlement contract splits funds: seller receives payout, buyer receives automatic refund for the remainder. Every settlement emits a receipt hash on-chain.
+
+The system includes a full dispute mechanism with bond slashing, 3-party receipt attestation (buyer + seller + gateway), an event ledger that records every step from negotiation to settlement, and a React dashboard for real-time monitoring and SLA simulation.
+
+All wallet operations — approve, deposit, sign, transfer — go through a WDK sidecar built on @tetherto/wdk and @tetherto/wdk-wallet-evm, with production hardening: per-wallet nonce manager, retry with circuit breaker, Bearer token authentication, RPC provider fallback, structured logging, and graceful shutdown.
+
+---
+
+### How does your project use WDK?
+
+SLAgent uses WDK as the core wallet infrastructure for all agent roles. The WDK sidecar (Node.js service built on @tetherto/wdk + @tetherto/wdk-wallet-evm) handles every wallet operation in the system:
+
+1. Wallet creation and key derivation from a BIP-39 mnemonic, with separate accounts per role (buyer index 0, seller index 1, gateway index 2, resolver index 3)
+2. ERC-20 approve and deposit calls for escrow funding
+3. Transaction signing for settlement and dispute operations
+4. An atomic approve-and-deposit endpoint with retry for reliable on-chain interactions
+5. Message signing for receipt attestation (buyer/seller/gateway 3-party signatures)
+
+The sidecar runs as a standalone service and is called by the Python buyer agent and gateway via HTTP. No private keys are ever handled in application code — all signing goes through WDK. The sidecar includes production hardening: per-wallet nonce manager to prevent transaction collisions, retry with exponential backoff and circuit breaker, Bearer token authentication, RPC provider fallback, structured request logging with a /metrics endpoint, and graceful shutdown.
+
+---
+
+### What problem does your project solve?
+
+In current AI API markets, buyers pay the same price regardless of whether the response is fast or slow, valid or malformed, successful or failed. When autonomous agents make thousands of calls without human oversight, this misalignment wastes capital and provides zero quality incentive to sellers.
+
+SLAgent solves this by introducing verifiable, SLA-driven settlement:
+- Buyers lock max_price into escrow before execution, guaranteeing they never overpay
+- Sellers earn more for faster, valid responses (latency tier bonuses)
+- Failed or invalid outputs trigger automatic full refund — no manual dispute needed
+- Every settlement is backed by a signed performance receipt with on-chain proof
+- Disputes are handled through a bonded challenge mechanism with slashing
+
+The result: agents can trade services autonomously with aligned economic incentives, verifiable proofs, and zero trust required.
+
+---
+
+### How does the agent operate autonomously?
+
+The buyer agent operates a fully autonomous loop without human intervention:
+
+1. Discovers seller capabilities by querying the seller API
+2. Negotiates SLA terms — selects from Bronze/Silver/Gold offer presets, optionally uses Gemini LLM to evaluate mandate conditions
+3. Calls the WDK sidecar to execute approve and deposit on-chain
+4. Sends the API call to the gateway with deposit proof
+5. Receives and verifies the performance receipt (fail-closed: any invariant violation triggers rejection)
+6. Submits receipt attestation (buyer signature)
+7. If SLA breach is detected, automatically opens an on-chain dispute with bond
+8. Tracks cumulative spend against a budget limit across multiple calls
+9. Executes multi-step tool chains (2+ paid calls per workflow) with per-step deposit and receipt tracking
+
+The entire cycle — from negotiation through settlement — runs on a configurable autopilot timer with no human input required.
+
+---
+
+### Technical Architecture
+
+The system has five components:
+
+Buyer Agent (Python): Autonomous agent that discovers sellers, negotiates SLA terms, calls WDK for approve/deposit, sends requests through the gateway, verifies receipts, and opens disputes when needed. Supports multi-step agentic tool chains with budget tracking.
+
+SLA Gateway (FastAPI): Reverse proxy that sits between buyer and seller. Verifies on-chain deposit before forwarding work. Measures TTFT and total latency. Runs JSON schema validation. Computes payout from deterministic latency tiers. Signs performance receipts. Submits settlement on-chain. Maintains an event ledger of every step.
+
+Seller Service (FastAPI + Gemini): LLM-powered API service using Gemini 2.0 Flash. Supports controllable demo modes (fast/slow/invalid/error/timeout) with simulation controls (delay_ms slider, force_error toggle).
+
+WDK Sidecar (Node.js): Self-custodial wallet service built on @tetherto/wdk + @tetherto/wdk-wallet-evm. Handles create, approve, deposit, sign, transfer, balance. Production hardened with nonce manager, circuit breaker, retry, Bearer auth, RPC fallback, structured logging, graceful shutdown.
+
+Settlement Contract (Solidity/Foundry): On-chain escrow with deposit, settle, openDispute, resolveDispute, finalize. Escrow-based payout delayed until dispute window closes. Bond slashing for wrongful disputes. Receipt hash emitted on-chain.
+
+Dashboard (React + Vite): Real-time monitoring with live balance panel, receipts table, event timeline, SLA simulator with latency slider and failure toggles, history page with full lifecycle replay, negotiation history, and dispute panel.
+
+---
+
+### Economic Model
+
+The payout model uses a bonus structure, not a penalty structure:
+
+max_price = 100,000 µUSDT (0.10 USDT), locked by buyer in escrow before execution.
+
+If the seller succeeds and output passes schema validation:
+- Latency 2 seconds or less: payout 100,000 (full pay, zero refund)
+- Latency between 2 and 5 seconds: payout 80,000 (refund 20,000)
+- Latency over 5 seconds: payout 60,000 base only (refund 40,000)
+
+If the seller fails or output is invalid: payout 0, full refund 100,000.
+
+This aligns incentives: sellers earn more for better performance, buyers are protected from bad outcomes, and no one is punished into zero for slight slowness.
+
+---
+
+### Demo Link
+
+https://dashboard-woad-nine-19.vercel.app
+
+---
+
+### GitHub Repository
+
+https://github.com/inchyangv/SLAgent
+
+---
+
+### Live API Endpoints
+
+Gateway: https://gateway-production-c5d6.up.railway.app
+Seller: https://seller-production-c5ae.up.railway.app
+WDK Sidecar: https://wdk-production.up.railway.app
+
+---
+
+### Smart Contract Addresses (Sepolia)
+
+Mock USDT Token: 0x4029A86BcD3c366DD750EaFe3a899c9C6144d662
+SLASettlement Contract: 0xDEf30B0ae11b26BAA1218C485C3D00090aDD5936
+Chain: Ethereum Sepolia (Chain ID 11155111)
+
+---
+
+### Tech Stack
+
+Smart Contracts: Solidity 0.8.24, Foundry, OpenZeppelin
+Gateway: Python 3.11, FastAPI, web3.py, eth-account, httpx
+Buyer Agent: Python 3.11, httpx async, Gemini SDK
+Seller: Python 3.11, FastAPI, Google Gemini 2.0 Flash
+WDK Sidecar: Node.js 20, @tetherto/wdk, @tetherto/wdk-wallet-evm, ethers v6, Express
+Dashboard: React 19, Vite, TypeScript, TanStack Query, Recharts, Tailwind CSS, wagmi, RainbowKit
+Deployment: Railway (backend), Vercel (frontend), Sepolia (contracts)
+
+---
+
+### What makes your project different from existing solutions?
+
+Existing AI API payment is fixed-price and trust-based. SLAgent introduces three things that do not exist today:
+
+1. Proof that an SLA was met or breached — every call produces a signed performance receipt with latency metrics, validation results, and payout computation, with the receipt hash recorded on-chain.
+
+2. Automatic split and refund based on measured outcomes — the settlement contract deterministically divides escrowed funds between seller (payout) and buyer (refund) based on SLA tier results. No human arbitration needed for the common case.
+
+3. WDK-native autonomous wallet operations — agents hold their own wallets through WDK, execute approve/deposit/sign autonomously, and never expose private keys to application code. The sidecar is production-hardened with nonce management, circuit breaking, and retry logic.
+
+The result is a system where any AI API can be wrapped with SLA-guaranteed settlement by placing the gateway in front of it.
+
+---
+
+### Challenges faced during development
+
+The main challenge was making WDK reliable enough for autonomous agent use. When an agent sends transactions without human oversight, every failure mode matters. We built per-wallet nonce management to prevent transaction collisions, retry with exponential backoff and circuit breaker to handle RPC instability, an atomic approve-and-deposit endpoint to avoid partial state, and RPC provider fallback for resilience. We also had to ensure the settlement contract's escrow timing aligned correctly with the dispute window — payout is delayed until the window closes, which required careful coordination between the gateway's settlement calls and the contract state machine.
+
+---
+
+### Future plans
+
+- Support more validator types beyond JSON schema (SQL test harness, function-call validation)
+- Multi-gateway federation for decentralized measurement
+- Cross-chain settlement with receipt bridging
+- Reputation scoring for seller endpoints based on historical SLA compliance
+- Standardized receipt signing with multi-sig (buyer + seller + gateway)
+- Receipt storage and indexing layer for large-scale audit
+- Production USDT deployment on mainnet

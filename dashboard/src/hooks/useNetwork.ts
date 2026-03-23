@@ -1,13 +1,15 @@
-import { useAccount, useChainId } from 'wagmi'
-import { sepolia } from 'wagmi/chains'
+import { useQuery } from '@tanstack/react-query'
+import { useSettingsStore } from '../store/settings'
+
+const CHAIN_ID = 11155111 // Sepolia
 
 const SUPPORTED_CHAINS: Record<number, string> = {
-  [sepolia.id]: 'Sepolia',
+  [CHAIN_ID]: 'Sepolia',
   84532: 'Base Sepolia',
 }
 
 const EXPLORERS: Record<number, string> = {
-  [sepolia.id]: 'https://sepolia.etherscan.io',
+  [CHAIN_ID]: 'https://sepolia.etherscan.io',
   84532: 'https://sepolia.basescan.org',
 }
 
@@ -23,20 +25,41 @@ export function addrExplorerUrl(chainId: number, address: string): string | null
   return `${base}/address/${address}`
 }
 
-export function useNetwork() {
-  const { isConnected, address } = useAccount()
-  const chainId = useChainId()
+export interface WdkRole {
+  address?: string
+  balance?: string | number
+}
 
-  const networkName = SUPPORTED_CHAINS[chainId] ?? `Chain ${chainId}`
-  const isCorrectNetwork = chainId === sepolia.id || chainId === 84532
-  const explorerBase = EXPLORERS[chainId] ?? null
+/**
+ * Checks WDK sidecar connectivity via the gateway's balances endpoint.
+ * Returns all role wallet addresses managed by WDK.
+ */
+export function useNetwork() {
+  const gatewayUrl = useSettingsStore((s) => s.gatewayUrl)
+
+  const { data, isError } = useQuery({
+    queryKey: ['wdk-status', gatewayUrl],
+    queryFn: async () => {
+      const res = await fetch(`${gatewayUrl}/v1/balances`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    },
+    refetchInterval: 15000,
+    staleTime: 12000,
+    retry: 1,
+  })
+
+  const roles: Record<string, WdkRole> = data?.roles ?? {}
+  const buyerAddress: string | undefined = roles.buyer?.address
+  const isConnected = !isError && !!buyerAddress
 
   return {
     isConnected,
-    address,
-    chainId,
-    networkName,
-    isCorrectNetwork,
-    explorerBase,
+    address: buyerAddress,
+    roles,
+    chainId: CHAIN_ID,
+    networkName: SUPPORTED_CHAINS[CHAIN_ID]!,
+    isCorrectNetwork: true,
+    explorerBase: EXPLORERS[CHAIN_ID] ?? null,
   }
 }

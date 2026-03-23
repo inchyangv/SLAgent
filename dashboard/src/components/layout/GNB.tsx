@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Menu, X, Bell } from 'lucide-react'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useNetwork } from '../../hooks/useNetwork'
+import { Menu, X, Bell, Wallet, ExternalLink, Copy, Check, Shield } from 'lucide-react'
+import { useNetwork, addrExplorerUrl } from '../../hooks/useNetwork'
+import { useSettingsStore } from '../../store/settings'
 import { useLogStore } from '../../store/log'
+import { shortAddr } from '../../lib/format'
 import type { LogEntry } from '../../store/log'
 
 const navLinks = [
@@ -105,25 +106,172 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
   )
 }
 
+function WdkWalletDropdown({ onClose }: { onClose: () => void }) {
+  const { isConnected, roles, chainId, networkName } = useNetwork()
+  const wdkUrl = useSettingsStore((s) => s.gatewayUrl).replace(/\/+$/, '')
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null)
+
+  const roleEntries = (['buyer', 'seller', 'gateway'] as const).map((role) => ({
+    role,
+    address: roles[role]?.address,
+  }))
+
+  function handleCopy(addr: string) {
+    void navigator.clipboard.writeText(addr)
+    setCopiedAddr(addr)
+    setTimeout(() => setCopiedAddr(null), 1500)
+  }
+
+  return (
+    <div
+      className="absolute right-0 top-full mt-1 w-80 rounded-lg border shadow-2xl z-50 overflow-hidden"
+      style={{ background: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-strong)' }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-3 py-2.5 border-b"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="flex items-center gap-2">
+          <Shield size={14} style={{ color: 'var(--color-accent)' }} />
+          <span className="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            WDK Wallet
+          </span>
+          <span
+            className="text-xs px-1.5 py-0.5 rounded font-semibold"
+            style={{
+              background: isConnected ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+              color: isConnected ? 'var(--color-success)' : 'var(--color-error)',
+              fontSize: '9px',
+            }}
+          >
+            {isConnected ? 'CONNECTED' : 'OFFLINE'}
+          </span>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-0.5 rounded hover:bg-zinc-800 transition-colors"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      {/* Info row */}
+      <div
+        className="px-3 py-2 border-b flex items-center justify-between"
+        style={{ borderColor: 'var(--color-border-subtle)' }}
+      >
+        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Network</span>
+        <span className="text-xs font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+          {networkName} ({chainId})
+        </span>
+      </div>
+
+      {/* Role wallets */}
+      <div className="px-3 py-2">
+        <div className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>
+          Managed Wallets
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {roleEntries.map(({ role, address }) => {
+            const explorerUrl = address ? addrExplorerUrl(chainId, address) : null
+            return (
+              <div
+                key={role}
+                className="flex items-center gap-2 px-2 py-1.5 rounded"
+                style={{ background: 'var(--color-bg-primary)' }}
+              >
+                <span
+                  className="w-14 text-center text-xs font-medium uppercase rounded py-0.5 shrink-0"
+                  style={{
+                    background: 'var(--color-bg-elevated)',
+                    color: 'var(--color-text-muted)',
+                    fontSize: '9px',
+                  }}
+                >
+                  {role}
+                </span>
+                <span
+                  className="flex-1 text-xs font-mono truncate"
+                  style={{ color: address ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
+                  title={address}
+                >
+                  {address ? shortAddr(address) : '—'}
+                </span>
+                {address && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleCopy(address)}
+                      className="p-0.5 rounded hover:bg-zinc-700 transition-colors"
+                      style={{ color: 'var(--color-text-muted)' }}
+                      title="Copy address"
+                    >
+                      {copiedAddr === address ? <Check size={11} /> : <Copy size={11} />}
+                    </button>
+                    {explorerUrl && (
+                      <a
+                        href={explorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-0.5 rounded hover:bg-zinc-700 transition-colors"
+                        style={{ color: 'var(--color-text-muted)' }}
+                        title="View on explorer"
+                      >
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div
+        className="px-3 py-2 border-t"
+        style={{ borderColor: 'var(--color-border-subtle)' }}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Sidecar</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+            {wdkUrl}
+          </span>
+        </div>
+        <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)', fontSize: '10px', lineHeight: 1.4 }}>
+          All signing is handled server-side via the WDK sidecar. No browser wallet required.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function GNB() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  const { isConnected, networkName, isCorrectNetwork } = useNetwork()
+  const [walletOpen, setWalletOpen] = useState(false)
+  const { isConnected, networkName, isCorrectNetwork, address } = useNetwork()
   const unreadCount = useLogStore((s) => s.unreadCount)
   const markAllRead = useLogStore((s) => s.markAllRead)
   const notifRef = useRef<HTMLDivElement>(null)
+  const walletRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
-    if (!notifOpen) return
+    if (!notifOpen && !walletOpen) return
     function handler(e: MouseEvent) {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+      if (notifOpen && notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setNotifOpen(false)
+      }
+      if (walletOpen && walletRef.current && !walletRef.current.contains(e.target as Node)) {
+        setWalletOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [notifOpen])
+  }, [notifOpen, walletOpen])
 
   function handleBellClick() {
     if (!notifOpen) markAllRead()
@@ -229,8 +377,40 @@ export function GNB() {
             {notifOpen && <NotificationDropdown onClose={() => setNotifOpen(false)} />}
           </div>
 
-          {/* RainbowKit wallet button */}
-          <ConnectButton accountStatus="avatar" chainStatus="icon" showBalance={false} />
+          {/* WDK Wallet status + dropdown */}
+          <div ref={walletRef} className="relative hidden sm:block">
+            <button
+              onClick={() => setWalletOpen((v) => !v)}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-colors hover:border-zinc-500"
+              style={{
+                background: 'var(--color-bg-primary)',
+                borderColor: isConnected ? 'var(--color-border)' : 'rgba(239,68,68,0.3)',
+              }}
+            >
+              <Wallet
+                size={14}
+                style={{ color: isConnected ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
+              />
+              <span
+                className="text-xs font-mono"
+                style={{ color: isConnected ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
+              >
+                {isConnected ? shortAddr(address) : 'WDK Offline'}
+              </span>
+              <span
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{
+                  background: 'rgba(74,158,255,0.1)',
+                  color: 'var(--color-accent)',
+                  fontSize: '9px',
+                  fontWeight: 600,
+                }}
+              >
+                WDK
+              </span>
+            </button>
+            {walletOpen && <WdkWalletDropdown onClose={() => setWalletOpen(false)} />}
+          </div>
 
           {/* Mobile hamburger */}
           <button
